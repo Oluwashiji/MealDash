@@ -1,0 +1,826 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Meal Dash - Online Food Ordering System API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: restaurants
+    description: Restaurant operations
+  - name: menu
+    description: Menu item operations
+  - name: orders
+    description: Order operations
+  - name: applications
+    description: Job application operations
+  - name: admin
+    description: Admin operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /restaurants:
+    get:
+      operationId: listRestaurants
+      tags: [restaurants]
+      summary: List all restaurants
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Filter by category (top, campus)
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search restaurants by name
+      responses:
+        "200":
+          description: List of restaurants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Restaurant"
+
+  /restaurants/{id}:
+    get:
+      operationId: getRestaurant
+      tags: [restaurants]
+      summary: Get a single restaurant
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Restaurant details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Restaurant"
+        "404":
+          description: Not found
+
+  /restaurants/{restaurantId}/menu:
+    get:
+      operationId: getMenu
+      tags: [menu]
+      summary: Get menu items for a restaurant
+      parameters:
+        - name: restaurantId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Filter by menu category
+      responses:
+        "200":
+          description: Menu items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MenuItem"
+
+  /popular-meals:
+    get:
+      operationId: getPopularMeals
+      tags: [menu]
+      summary: Get popular meals across all restaurants
+      responses:
+        "200":
+          description: Popular meals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PopularMeal"
+
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      summary: List order history
+      responses:
+        "200":
+          description: Order list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+    post:
+      operationId: createOrder
+      tags: [orders]
+      summary: Place a new order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderBody"
+      responses:
+        "201":
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      summary: Get order details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          description: Not found
+
+  /orders/{id}/status:
+    patch:
+      operationId: updateOrderStatus
+      tags: [orders]
+      summary: Update order delivery status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOrderStatusBody"
+      responses:
+        "200":
+          description: Updated order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+  /applications:
+    get:
+      operationId: listApplications
+      tags: [applications]
+      summary: List job applications (admin)
+      responses:
+        "200":
+          description: Applications list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Application"
+    post:
+      operationId: createApplication
+      tags: [applications]
+      summary: Submit a job application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApplicationBody"
+      responses:
+        "201":
+          description: Application submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+
+  /admin/restaurants:
+    post:
+      operationId: adminCreateRestaurant
+      tags: [admin]
+      summary: Create a restaurant (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRestaurantBody"
+      responses:
+        "201":
+          description: Restaurant created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Restaurant"
+
+  /admin/restaurants/{id}:
+    patch:
+      operationId: adminUpdateRestaurant
+      tags: [admin]
+      summary: Update a restaurant (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRestaurantBody"
+      responses:
+        "200":
+          description: Restaurant updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Restaurant"
+    delete:
+      operationId: adminDeleteRestaurant
+      tags: [admin]
+      summary: Delete a restaurant (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /admin/menu-items:
+    post:
+      operationId: adminCreateMenuItem
+      tags: [admin]
+      summary: Create a menu item (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMenuItemBody"
+      responses:
+        "201":
+          description: Menu item created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MenuItem"
+
+  /admin/menu-items/{id}:
+    patch:
+      operationId: adminUpdateMenuItem
+      tags: [admin]
+      summary: Update a menu item (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMenuItemBody"
+      responses:
+        "200":
+          description: Menu item updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MenuItem"
+    delete:
+      operationId: adminDeleteMenuItem
+      tags: [admin]
+      summary: Delete a menu item (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [admin]
+      summary: Get admin dashboard summary stats
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /search/meals:
+    get:
+      operationId: searchMeals
+      tags: [menu]
+      summary: Search meals across all restaurants
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search query
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PopularMeal"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Restaurant:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        image:
+          type: string
+        category:
+          type: string
+          enum: [top, campus]
+        rating:
+          type: number
+        deliveryTimeMin:
+          type: integer
+        deliveryTimeMax:
+          type: integer
+        deliveryFee:
+          type: number
+        tags:
+          type: array
+          items:
+            type: string
+        isOpen:
+          type: boolean
+        address:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - description
+        - image
+        - category
+        - rating
+        - deliveryTimeMin
+        - deliveryTimeMax
+        - deliveryFee
+        - tags
+        - isOpen
+        - address
+        - createdAt
+
+    MenuItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        restaurantId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        image:
+          type: string
+        category:
+          type: string
+        isAvailable:
+          type: boolean
+        isPopular:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - restaurantId
+        - name
+        - description
+        - price
+        - image
+        - category
+        - isAvailable
+        - isPopular
+        - createdAt
+
+    PopularMeal:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        image:
+          type: string
+        category:
+          type: string
+        restaurantId:
+          type: integer
+        restaurantName:
+          type: string
+        deliveryTimeMin:
+          type: integer
+        deliveryTimeMax:
+          type: integer
+      required:
+        - id
+        - name
+        - description
+        - price
+        - image
+        - category
+        - restaurantId
+        - restaurantName
+        - deliveryTimeMin
+        - deliveryTimeMax
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+        restaurantId:
+          type: integer
+        restaurantName:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItem"
+        subtotal:
+          type: number
+        deliveryFee:
+          type: number
+        total:
+          type: number
+        status:
+          type: string
+          enum: [pending, preparing, on_the_way, delivered, cancelled]
+        deliveryAddress:
+          type: string
+        customerName:
+          type: string
+        customerPhone:
+          type: string
+        estimatedDelivery:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - restaurantId
+        - restaurantName
+        - items
+        - subtotal
+        - deliveryFee
+        - total
+        - status
+        - deliveryAddress
+        - customerName
+        - customerPhone
+        - estimatedDelivery
+        - createdAt
+
+    OrderItem:
+      type: object
+      properties:
+        menuItemId:
+          type: integer
+        name:
+          type: string
+        price:
+          type: number
+        quantity:
+          type: integer
+      required:
+        - menuItemId
+        - name
+        - price
+        - quantity
+
+    CreateOrderBody:
+      type: object
+      properties:
+        restaurantId:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateOrderItem"
+        deliveryAddress:
+          type: string
+        customerName:
+          type: string
+        customerPhone:
+          type: string
+      required:
+        - restaurantId
+        - items
+        - deliveryAddress
+        - customerName
+        - customerPhone
+
+    CreateOrderItem:
+      type: object
+      properties:
+        menuItemId:
+          type: integer
+        quantity:
+          type: integer
+      required:
+        - menuItemId
+        - quantity
+
+    UpdateOrderStatusBody:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, preparing, on_the_way, delivered, cancelled]
+      required:
+        - status
+
+    Application:
+      type: object
+      properties:
+        id:
+          type: integer
+        fullName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [chef, delivery_rider, manager]
+        portfolioLink:
+          type: ["string", "null"]
+        message:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - fullName
+        - email
+        - phone
+        - role
+        - portfolioLink
+        - message
+        - createdAt
+
+    CreateApplicationBody:
+      type: object
+      properties:
+        fullName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [chef, delivery_rider, manager]
+        portfolioLink:
+          type: string
+        message:
+          type: string
+      required:
+        - fullName
+        - email
+        - phone
+        - role
+
+    CreateRestaurantBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        image:
+          type: string
+        category:
+          type: string
+          enum: [top, campus]
+        rating:
+          type: number
+        deliveryTimeMin:
+          type: integer
+        deliveryTimeMax:
+          type: integer
+        deliveryFee:
+          type: number
+        tags:
+          type: array
+          items:
+            type: string
+        isOpen:
+          type: boolean
+        address:
+          type: string
+      required:
+        - name
+        - description
+        - image
+        - category
+        - deliveryTimeMin
+        - deliveryTimeMax
+        - deliveryFee
+        - address
+
+    UpdateRestaurantBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        image:
+          type: string
+        category:
+          type: string
+          enum: [top, campus]
+        rating:
+          type: number
+        deliveryTimeMin:
+          type: integer
+        deliveryTimeMax:
+          type: integer
+        deliveryFee:
+          type: number
+        tags:
+          type: array
+          items:
+            type: string
+        isOpen:
+          type: boolean
+        address:
+          type: string
+
+    CreateMenuItemBody:
+      type: object
+      properties:
+        restaurantId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        image:
+          type: string
+        category:
+          type: string
+        isAvailable:
+          type: boolean
+        isPopular:
+          type: boolean
+      required:
+        - restaurantId
+        - name
+        - description
+        - price
+        - image
+        - category
+
+    UpdateMenuItemBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        image:
+          type: string
+        category:
+          type: string
+        isAvailable:
+          type: boolean
+        isPopular:
+          type: boolean
+
+    DashboardSummary:
+      type: object
+      properties:
+        totalRestaurants:
+          type: integer
+        totalMenuItems:
+          type: integer
+        totalOrders:
+          type: integer
+        totalApplications:
+          type: integer
+        recentOrders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+        ordersByStatus:
+          type: object
+          properties:
+            pending:
+              type: integer
+            preparing:
+              type: integer
+            on_the_way:
+              type: integer
+            delivered:
+              type: integer
+            cancelled:
+              type: integer
+          required:
+            - pending
+            - preparing
+            - on_the_way
+            - delivered
+            - cancelled
+      required:
+        - totalRestaurants
+        - totalMenuItems
+        - totalOrders
+        - totalApplications
+        - recentOrders
+        - ordersByStatus
