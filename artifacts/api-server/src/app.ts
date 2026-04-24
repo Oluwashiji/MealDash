@@ -39,8 +39,8 @@ app.use("/api", router);
 const frontendPath = path.resolve(__dirname, "../../meal-dash/dist/public");
 app.use(express.static(frontendPath));
 
-// All non-API routes go to index.html (React Router handles them)
-app.get("*", (_req, res) => {
+// SPA fallback — Express 5 requires named wildcard, not bare *
+app.get("/{*splat}", (_req, res) => {
   res.sendFile(path.join(frontendPath, "index.html"));
 });
 
