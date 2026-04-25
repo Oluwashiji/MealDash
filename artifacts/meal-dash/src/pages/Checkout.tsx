@@ -186,10 +186,10 @@ export default function Checkout() {
                 {paymentMethod === "bank_transfer" && (
                   <div className="mt-4 p-4 rounded-lg bg-muted text-sm space-y-1">
                     <p className="font-semibold text-card-foreground mb-2">Transfer Details</p>
-                    <p><span className="text-muted-foreground">Bank:</span> <span className="font-medium">First Bank Nigeria</span></p>
+                    <p><span className="text-muted-foreground">Bank:</span> <span className="font-medium">MONIEPOINT</span></p>
                     <p><span className="text-muted-foreground">Account Name:</span> <span className="font-medium">MealDash Services</span></p>
-                    <p><span className="text-muted-foreground">Account Number:</span> <span className="font-medium">1234567890</span></p>
-                    <p className="text-muted-foreground mt-2 text-xs">Use your phone number as payment reference.</p>
+                    <p><span className="text-muted-foreground">Account Number:</span> <span className="font-medium">7081936853</span></p>
+                    
                   </div>
                 )}
               </div>
