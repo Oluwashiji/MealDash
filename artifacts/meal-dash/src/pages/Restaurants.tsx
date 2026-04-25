@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { Link, useSearch } from "wouter";
 import { Clock, Star, Truck, Search } from "lucide-react";
-import { useListRestaurants } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+import { restaurants } from "@/lib/data";
 
 export default function Restaurants() {
   const searchString = useSearch();
@@ -13,9 +12,14 @@ export default function Restaurants() {
   const [category, setCategory] = useState(initialCategory);
   const [search, setSearch] = useState("");
 
-  const { data: restaurants, isLoading } = useListRestaurants(
-    { category: category || undefined, search: search || undefined }
-  );
+  const filtered = restaurants.filter((r) => {
+    const matchesCategory = category ? r.category === category : true;
+    const matchesSearch = search
+      ? r.name.toLowerCase().includes(search.toLowerCase()) ||
+        r.description.toLowerCase().includes(search.toLowerCase())
+      : true;
+    return matchesCategory && matchesSearch;
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -55,26 +59,13 @@ export default function Restaurants() {
           </div>
         </div>
 
-        {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="rounded-xl border bg-card overflow-hidden">
-                <Skeleton className="h-48 w-full" />
-                <div className="p-4 space-y-2">
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-3 w-1/2" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : restaurants?.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-muted-foreground text-lg">No restaurants found</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {restaurants?.map((r) => (
+            {filtered.map((r) => (
               <Link key={r.id} href={`/restaurant/${r.id}`} data-testid={`card-restaurant-${r.id}`}>
                 <div className="rounded-xl border bg-card overflow-hidden group hover:shadow-lg transition-all duration-300 hover:-translate-y-1 cursor-pointer h-full">
                   <div className="relative h-48 bg-muted overflow-hidden">
@@ -106,7 +97,7 @@ export default function Restaurants() {
                         <Clock className="w-3.5 h-3.5 text-primary" /> {r.deliveryTimeMin}-{r.deliveryTimeMax} min
                       </span>
                       <span className="flex items-center gap-1">
-                        <Truck className="w-3.5 h-3.5" /> N{r.deliveryFee}
+                        <Truck className="w-3.5 h-3.5" /> ₦{r.deliveryFee}
                       </span>
                     </div>
                   </div>
