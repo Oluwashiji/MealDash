@@ -171,3 +171,13 @@ export const popularMeals = menuItems
     deliveryTimeMin: restaurants.find((r) => r.id === m.restaurantId)?.deliveryTimeMin ?? 20,
     deliveryTimeMax: restaurants.find((r) => r.id === m.restaurantId)?.deliveryTimeMax ?? 40,
   }));
+
+// Live menu — reads admin overrides from localStorage
+export function getLiveMenuItems(): MenuItem[] {
+  try {
+    const saved = localStorage.getItem("md_menu_overrides");
+    return saved ? JSON.parse(saved) : menuItems;
+  } catch {
+    return menuItems;
+  }
+}

@@ -4,7 +4,7 @@ import { Clock, Star, Truck, MapPin, Plus, Minus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/contexts/CartContext";
 import { useToast } from "@/hooks/use-toast";
-import { restaurants, menuItems } from "@/lib/data";
+import { restaurants, getLiveMenuItems } from "@/lib/data";
 
 export default function RestaurantDetail() {
   const params = useParams<{ id: string }>();
@@ -12,7 +12,7 @@ export default function RestaurantDetail() {
   const [menuCategory, setMenuCategory] = useState("");
 
   const restaurant = restaurants.find((r) => r.id === id);
-  const allItems = menuItems.filter((m) => m.restaurantId === id && m.isAvailable);
+  const allItems = getLiveMenuItems().filter((m) => m.restaurantId === id && m.isAvailable);
   const filtered = menuCategory ? allItems.filter((m) => m.category === menuCategory) : allItems;
   const categories = [...new Set(allItems.map((m) => m.category))];
 

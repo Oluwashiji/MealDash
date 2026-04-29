@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 
 interface CartItem {
   menuItemId: number;
@@ -37,21 +37,38 @@ const defaultCart: CartState = {
   items: [],
 };
 
+function loadCart(): CartState {
+  try {
+    const saved = localStorage.getItem("md_cart");
+    return saved ? JSON.parse(saved) : defaultCart;
+  } catch {
+    return defaultCart;
+  }
+}
+
 const CartContext = createContext<CartContextType | null>(null);
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [cart, setCart] = useState<CartState>(defaultCart);
+  const [cart, setCart] = useState<CartState>(loadCart);
+
+  // Persist cart to localStorage on every change
+  useEffect(() => {
+    localStorage.setItem("md_cart", JSON.stringify(cart));
+  }, [cart]);
 
   const addItem = useCallback((item: CartItem, restaurant: { id: number; name: string; deliveryFee: number; deliveryTimeMin: number; deliveryTimeMax: number }) => {
     setCart((prev) => {
-      if (prev.restaurantId && prev.restaurantId !== restaurant.id) {
+      // Different restaurant — ask via confirm then clear
+      if (prev.restaurantId && prev.restaurantId !== restaurant.id && prev.items.length > 0) {
+        const ok = window.confirm(`Your cart has items from ${prev.restaurantName}. Start a new cart from ${restaurant.name}?`);
+        if (!ok) return prev;
         return {
           restaurantId: restaurant.id,
           restaurantName: restaurant.name,
           deliveryFee: restaurant.deliveryFee,
           deliveryTimeMin: restaurant.deliveryTimeMin,
           deliveryTimeMax: restaurant.deliveryTimeMax,
-          items: [{ ...item, quantity: item.quantity || 1 }],
+          items: [{ ...item, quantity: 1 }],
         };
       }
 
@@ -65,9 +82,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           deliveryTimeMin: restaurant.deliveryTimeMin,
           deliveryTimeMax: restaurant.deliveryTimeMax,
           items: prev.items.map((i) =>
-            i.menuItemId === item.menuItemId
-              ? { ...i, quantity: i.quantity + 1 }
-              : i
+            i.menuItemId === item.menuItemId ? { ...i, quantity: i.quantity + 1 } : i
           ),
         };
       }
@@ -87,29 +102,32 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const removeItem = useCallback((menuItemId: number) => {
     setCart((prev) => {
       const newItems = prev.items.filter((i) => i.menuItemId !== menuItemId);
-      if (newItems.length === 0) return defaultCart;
-      return { ...prev, items: newItems };
+      return newItems.length === 0 ? defaultCart : { ...prev, items: newItems };
     });
   }, []);
 
   const updateQuantity = useCallback((menuItemId: number, quantity: number) => {
     if (quantity <= 0) {
-      removeItem(menuItemId);
+      setCart((prev) => {
+        const newItems = prev.items.filter((i) => i.menuItemId !== menuItemId);
+        return newItems.length === 0 ? defaultCart : { ...prev, items: newItems };
+      });
       return;
     }
     setCart((prev) => ({
       ...prev,
-      items: prev.items.map((i) =>
-        i.menuItemId === menuItemId ? { ...i, quantity } : i
-      ),
+      items: prev.items.map((i) => i.menuItemId === menuItemId ? { ...i, quantity } : i),
     }));
-  }, [removeItem]);
+  }, []);
 
-  const clearCart = useCallback(() => setCart(defaultCart), []);
+  const clearCart = useCallback(() => {
+    setCart(defaultCart);
+    localStorage.removeItem("md_cart");
+  }, []);
 
-  const subtotal = cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const subtotal = cart.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
   const total = subtotal + cart.deliveryFee;
-  const itemCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
+  const itemCount = cart.items.reduce((sum, i) => sum + i.quantity, 0);
 
   return (
     <CartContext.Provider value={{ cart, addItem, removeItem, updateQuantity, clearCart, subtotal, total, itemCount }}>
