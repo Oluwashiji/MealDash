@@ -1,3 +1,4 @@
+import { menuItems as baseMenuItems } from "@/lib/data";
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
@@ -238,8 +239,7 @@ export default function Admin() {
 
   // Import base data
   useEffect(() => {
-    import { menuItems as baseMenuItems } from "@/lib/data";
-    const saved = loadMenuItems();
+     const saved = loadMenuItems();
     setMenuItems(saved || baseMenuItems);
   }, []);
 
