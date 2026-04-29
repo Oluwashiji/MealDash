@@ -1,424 +1,278 @@
-import { useState } from "react";
-import { LayoutDashboard, Store, UtensilsCrossed, Users, Plus, Pencil, Trash2, Clock, Package, ChefHat, Truck, CheckCircle, XCircle } from "lucide-react";
-import {
-  useGetDashboardSummary,
-  useListRestaurants,
-  useAdminCreateRestaurant,
-  useAdminUpdateRestaurant,
-  useAdminDeleteRestaurant,
-  getListRestaurantsQueryKey,
-  useGetMenu,
-  getGetMenuQueryKey,
-  useAdminCreateMenuItem,
-  useAdminUpdateMenuItem,
-  useAdminDeleteMenuItem,
-  useListApplications,
-  getGetDashboardSummaryQueryKey,
-} from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
+import { Package, ChefHat, Truck, CheckCircle, Clock, Phone, MapPin, Mail, Banknote, CreditCard, RefreshCw, LogOut, UtensilsCrossed } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { Separator } from "@/components/ui/separator";
 
-function DashboardTab() {
-  const { data: summary, isLoading } = useGetDashboardSummary();
+type OrderStatus = "pending" | "preparing" | "on_the_way" | "delivered";
 
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
-      </div>
-    );
+type Order = {
+  id: number;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  deliveryAddress: string;
+  paymentMethod: "cash" | "bank_transfer";
+  restaurantName: string;
+  items: { menuItemId: number; name: string; price: number; quantity: number; image: string }[];
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  status: OrderStatus;
+  placedAt: string;
+};
+
+const STATUS_CONFIG: Record<OrderStatus, { label: string; icon: typeof Package; color: string; bg: string }> = {
+  pending:    { label: "Order Placed",  icon: Package,      color: "text-yellow-700 dark:text-yellow-300", bg: "bg-yellow-100 dark:bg-yellow-900" },
+  preparing:  { label: "Preparing",     icon: ChefHat,      color: "text-blue-700 dark:text-blue-300",   bg: "bg-blue-100 dark:bg-blue-900" },
+  on_the_way: { label: "On the Way",    icon: Truck,        color: "text-purple-700 dark:text-purple-300", bg: "bg-purple-100 dark:bg-purple-900" },
+  delivered:  { label: "Delivered",     icon: CheckCircle,  color: "text-green-700 dark:text-green-300",  bg: "bg-green-100 dark:bg-green-900" },
+};
+
+const STATUS_FLOW: OrderStatus[] = ["pending", "preparing", "on_the_way", "delivered"];
+
+function getNextStatus(current: OrderStatus): OrderStatus | null {
+  const idx = STATUS_FLOW.indexOf(current);
+  return idx < STATUS_FLOW.length - 1 ? STATUS_FLOW[idx + 1] : null;
+}
+
+function getNextLabel(current: OrderStatus): string {
+  const next = getNextStatus(current);
+  if (!next) return "";
+  return {
+    preparing: "Mark as Preparing",
+    on_the_way: "Mark as On the Way",
+    delivered: "Mark as Delivered",
+  }[next] || "";
+}
+
+function loadOrders(): Order[] {
+  try {
+    return JSON.parse(localStorage.getItem("md_orders") || "[]");
+  } catch {
+    return [];
   }
+}
 
-  if (!summary) return null;
+function saveOrders(orders: Order[]) {
+  localStorage.setItem("md_orders", JSON.stringify(orders));
+}
 
-  const stats = [
-    { label: "Restaurants", value: summary.totalRestaurants, icon: Store, color: "text-primary" },
-    { label: "Menu Items", value: summary.totalMenuItems, icon: UtensilsCrossed, color: "text-secondary" },
-    { label: "Orders", value: summary.totalOrders, icon: Package, color: "text-accent-foreground" },
-    { label: "Applications", value: summary.totalApplications, icon: Users, color: "text-destructive" },
-  ];
+export default function Admin() {
+  const { user, logout } = useAuth();
+  const [, setLocation] = useLocation();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [filter, setFilter] = useState<OrderStatus | "all">("all");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  const statusIcons: Record<string, typeof Package> = {
-    pending: Clock,
-    preparing: ChefHat,
-    on_the_way: Truck,
-    delivered: CheckCircle,
-    cancelled: XCircle,
+  useEffect(() => {
+    if (!user?.isAdmin) {
+      setLocation("/auth?from=/admin");
+      return;
+    }
+    setOrders(loadOrders());
+  }, [user, setLocation]);
+
+  const refresh = () => setOrders(loadOrders());
+
+  const advanceStatus = (orderId: number) => {
+    const updated = orders.map((o) => {
+      if (o.id !== orderId) return o;
+      const next = getNextStatus(o.status);
+      return next ? { ...o, status: next } : o;
+    });
+    setOrders(updated);
+    saveOrders(updated);
   };
 
+  if (!user?.isAdmin) return null;
+
+  const filtered = filter === "all" ? orders : orders.filter((o) => o.status === filter);
+  const counts = STATUS_FLOW.reduce((acc, s) => ({ ...acc, [s]: orders.filter((o) => o.status === s).length }), {} as Record<string, number>);
+
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <div key={stat.label} className="rounded-xl border bg-card p-4" data-testid={`stat-${stat.label.toLowerCase()}`}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
-                  <Icon className={`w-5 h-5 ${stat.color}`} />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-card-foreground">{stat.value}</p>
-                  <p className="text-xs text-muted-foreground">{stat.label}</p>
-                </div>
-              </div>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <div className="border-b bg-card sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+              <UtensilsCrossed className="w-4 h-4 text-primary-foreground" />
             </div>
-          );
-        })}
+            <span className="font-bold text-foreground">MealDash <span className="text-primary">Admin</span></span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={refresh} className="gap-1">
+              <RefreshCw className="w-3.5 h-3.5" /> Refresh
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => { logout(); setLocation("/"); }} className="gap-1 text-destructive">
+              <LogOut className="w-3.5 h-3.5" /> Logout
+            </Button>
+          </div>
+        </div>
       </div>
 
-      <div className="rounded-xl border bg-card p-6">
-        <h3 className="font-semibold text-card-foreground mb-4">Orders by Status</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-          {Object.entries(summary.ordersByStatus).map(([status, count]) => {
-            const Icon = statusIcons[status] || Package;
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-foreground">Orders Dashboard</h1>
+          <p className="text-muted-foreground mt-1">{orders.length} total orders</p>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+          {STATUS_FLOW.map((s) => {
+            const cfg = STATUS_CONFIG[s];
+            const Icon = cfg.icon;
             return (
-              <div key={status} className="text-center p-3 rounded-lg bg-muted">
-                <Icon className="w-5 h-5 mx-auto text-muted-foreground mb-1" />
-                <p className="text-lg font-bold">{count}</p>
-                <p className="text-xs text-muted-foreground capitalize">{status.replace("_", " ")}</p>
+              <div key={s} className={`rounded-xl p-4 ${cfg.bg} cursor-pointer border-2 transition-all ${filter === s ? "border-primary" : "border-transparent"}`} onClick={() => setFilter(filter === s ? "all" : s)}>
+                <div className="flex items-center justify-between mb-2">
+                  <Icon className={`w-5 h-5 ${cfg.color}`} />
+                  <span className={`text-2xl font-bold ${cfg.color}`}>{counts[s] || 0}</span>
+                </div>
+                <p className={`text-sm font-medium ${cfg.color}`}>{cfg.label}</p>
               </div>
             );
           })}
         </div>
-      </div>
 
-      {summary.recentOrders.length > 0 && (
-        <div className="rounded-xl border bg-card p-6">
-          <h3 className="font-semibold text-card-foreground mb-4">Recent Orders</h3>
-          <div className="space-y-3">
-            {summary.recentOrders.map((order) => (
-              <div key={order.id} className="flex items-center justify-between p-3 rounded-lg bg-muted text-sm">
-                <div>
-                  <span className="font-medium">#{order.id}</span> - {order.restaurantName}
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="capitalize text-muted-foreground">{order.status.replace("_", " ")}</span>
-                  <span className="font-bold text-primary">N{order.total.toLocaleString()}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function RestaurantsTab() {
-  const { data: restaurants, isLoading } = useListRestaurants();
-  const queryClient = useQueryClient();
-  const createRestaurant = useAdminCreateRestaurant();
-  const updateRestaurant = useAdminUpdateRestaurant();
-  const deleteRestaurant = useAdminDeleteRestaurant();
-  const { toast } = useToast();
-  const [showCreate, setShowCreate] = useState(false);
-  const [editId, setEditId] = useState<number | null>(null);
-  const [form, setForm] = useState({ name: "", description: "", image: "", category: "top" as string, deliveryTimeMin: 20, deliveryTimeMax: 35, deliveryFee: 500, address: "", tags: "" });
-
-  const resetForm = () => setForm({ name: "", description: "", image: "", category: "top", deliveryTimeMin: 20, deliveryTimeMax: 35, deliveryFee: 500, address: "", tags: "" });
-
-  const handleCreate = () => {
-    createRestaurant.mutate(
-      { data: { ...form, deliveryTimeMin: Number(form.deliveryTimeMin), deliveryTimeMax: Number(form.deliveryTimeMax), deliveryFee: Number(form.deliveryFee), tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean), category: form.category as "top" | "campus" } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListRestaurantsQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
-          setShowCreate(false);
-          resetForm();
-          toast({ title: "Restaurant created" });
-        },
-      }
-    );
-  };
-
-  const handleUpdate = () => {
-    if (!editId) return;
-    updateRestaurant.mutate(
-      { id: editId, data: { ...form, deliveryTimeMin: Number(form.deliveryTimeMin), deliveryTimeMax: Number(form.deliveryTimeMax), deliveryFee: Number(form.deliveryFee), tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean), category: form.category as "top" | "campus" } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListRestaurantsQueryKey() });
-          setEditId(null);
-          resetForm();
-          toast({ title: "Restaurant updated" });
-        },
-      }
-    );
-  };
-
-  const handleDelete = (id: number) => {
-    deleteRestaurant.mutate(
-      { id },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListRestaurantsQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
-          toast({ title: "Restaurant deleted" });
-        },
-      }
-    );
-  };
-
-  const formFields = (
-    <div className="space-y-3">
-      <div><Label>Name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="input-admin-restaurant-name" /></div>
-      <div><Label>Description</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-      <div><Label>Image URL</Label><Input value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} /></div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label>Category</Label>
-          <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="top">Top</SelectItem>
-              <SelectItem value="campus">Campus</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div><Label>Delivery Fee</Label><Input type="number" value={form.deliveryFee} onChange={(e) => setForm({ ...form, deliveryFee: Number(e.target.value) })} /></div>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div><Label>Min Time (min)</Label><Input type="number" value={form.deliveryTimeMin} onChange={(e) => setForm({ ...form, deliveryTimeMin: Number(e.target.value) })} /></div>
-        <div><Label>Max Time (min)</Label><Input type="number" value={form.deliveryTimeMax} onChange={(e) => setForm({ ...form, deliveryTimeMax: Number(e.target.value) })} /></div>
-      </div>
-      <div><Label>Address</Label><Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></div>
-      <div><Label>Tags (comma separated)</Label><Input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="Fast Delivery, Top Rated" /></div>
-    </div>
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="font-semibold text-lg">Restaurants</h3>
-        <Dialog open={showCreate} onOpenChange={setShowCreate}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="gap-1" onClick={resetForm} data-testid="button-add-restaurant"><Plus className="w-4 h-4" /> Add Restaurant</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Add Restaurant</DialogTitle></DialogHeader>
-            {formFields}
-            <Button onClick={handleCreate} disabled={createRestaurant.isPending}>{createRestaurant.isPending ? "Creating..." : "Create"}</Button>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {isLoading ? (
-        <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div>
-      ) : (
-        <div className="space-y-3">
-          {restaurants?.map((r) => (
-            <div key={r.id} className="flex items-center justify-between p-4 rounded-xl border bg-card" data-testid={`admin-restaurant-${r.id}`}>
-              <div className="flex items-center gap-3">
-                <img src={r.image} alt={r.name} className="w-12 h-12 rounded-lg object-cover" />
-                <div>
-                  <p className="font-medium text-card-foreground">{r.name}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{r.category}</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Dialog open={editId === r.id} onOpenChange={(open) => { if (!open) setEditId(null); }}>
-                  <DialogTrigger asChild>
-                    <Button size="icon" variant="ghost" onClick={() => { setEditId(r.id); setForm({ name: r.name, description: r.description, image: r.image, category: r.category, deliveryTimeMin: r.deliveryTimeMin, deliveryTimeMax: r.deliveryTimeMax, deliveryFee: r.deliveryFee, address: r.address, tags: r.tags.join(", ") }); }}>
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader><DialogTitle>Edit Restaurant</DialogTitle></DialogHeader>
-                    {formFields}
-                    <Button onClick={handleUpdate} disabled={updateRestaurant.isPending}>{updateRestaurant.isPending ? "Saving..." : "Save"}</Button>
-                  </DialogContent>
-                </Dialog>
-                <Button size="icon" variant="ghost" className="text-destructive" onClick={() => handleDelete(r.id)} data-testid={`button-delete-restaurant-${r.id}`}>
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
+        {/* Filter pills */}
+        <div className="flex gap-2 mb-6 flex-wrap">
+          <Button variant={filter === "all" ? "default" : "outline"} size="sm" onClick={() => setFilter("all")}>
+            All Orders ({orders.length})
+          </Button>
+          {STATUS_FLOW.map((s) => (
+            <Button key={s} variant={filter === s ? "default" : "outline"} size="sm" onClick={() => setFilter(filter === s ? "all" : s)}>
+              {STATUS_CONFIG[s].label} ({counts[s] || 0})
+            </Button>
           ))}
         </div>
-      )}
-    </div>
-  );
-}
 
-function MenuItemsTab() {
-  const { data: restaurants } = useListRestaurants();
-  const [selectedRestaurant, setSelectedRestaurant] = useState<number | null>(null);
-  const { data: menuItems, isLoading } = useGetMenu(
-    selectedRestaurant || 0,
-    {},
-    { query: { enabled: !!selectedRestaurant, queryKey: getGetMenuQueryKey(selectedRestaurant || 0) } }
-  );
-  const queryClient = useQueryClient();
-  const createItem = useAdminCreateMenuItem();
-  const updateItem = useAdminUpdateMenuItem();
-  const deleteItem = useAdminDeleteMenuItem();
-  const { toast } = useToast();
-  const [showCreate, setShowCreate] = useState(false);
-  const [editId, setEditId] = useState<number | null>(null);
-  const [form, setForm] = useState({ name: "", description: "", price: 0, image: "", category: "" });
+        {/* Orders list */}
+        {filtered.length === 0 ? (
+          <div className="text-center py-20 rounded-2xl border border-dashed">
+            <Package className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+            <p className="text-muted-foreground text-lg font-medium">No orders yet</p>
+            <p className="text-muted-foreground text-sm mt-1">Orders will appear here as customers place them</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filtered.map((order) => {
+              const cfg = STATUS_CONFIG[order.status];
+              const Icon = cfg.icon;
+              const next = getNextStatus(order.status);
+              const isExpanded = expandedId === order.id;
 
-  const resetForm = () => setForm({ name: "", description: "", price: 0, image: "", category: "" });
+              return (
+                <div key={order.id} className="rounded-xl border bg-card overflow-hidden">
+                  {/* Order header */}
+                  <div
+                    className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                    onClick={() => setExpandedId(isExpanded ? null : order.id)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="font-mono text-xs text-muted-foreground">#{String(order.id).slice(-6)}</span>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.color}`}>
+                          <Icon className="w-3 h-3" /> {cfg.label}
+                        </span>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${order.paymentMethod === "cash" ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300" : "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300"}`}>
+                          {order.paymentMethod === "cash" ? <Banknote className="w-3 h-3" /> : <CreditCard className="w-3 h-3" />}
+                          {order.paymentMethod === "cash" ? "Cash" : "Bank Transfer"}
+                        </span>
+                      </div>
+                      <p className="font-semibold text-foreground">{order.customerName}</p>
+                      <p className="text-sm text-muted-foreground">{order.restaurantName} · {order.items.length} item{order.items.length !== 1 ? "s" : ""}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{new Date(order.placedAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl font-bold text-primary">₦{order.total.toLocaleString()}</span>
+                      {next && (
+                        <Button
+                          size="sm"
+                          onClick={(e) => { e.stopPropagation(); advanceStatus(order.id); }}
+                          className="whitespace-nowrap"
+                        >
+                          {getNextLabel(order.status)}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
 
-  const formFields = (
-    <div className="space-y-3">
-      <div><Label>Name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-      <div><Label>Description</Label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-      <div className="grid grid-cols-2 gap-3">
-        <div><Label>Price</Label><Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} /></div>
-        <div><Label>Category</Label><Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Main, Sides, Drinks..." /></div>
-      </div>
-      <div><Label>Image URL</Label><Input value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} /></div>
-    </div>
-  );
+                  {/* Expanded details */}
+                  {isExpanded && (
+                    <div className="border-t px-4 sm:px-5 py-4 space-y-4 bg-muted/20">
+                      {/* Contact info */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Phone className="w-4 h-4 flex-shrink-0" />
+                          <span>{order.customerPhone}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Mail className="w-4 h-4 flex-shrink-0" />
+                          <span className="truncate">{order.customerEmail || "—"}</span>
+                        </div>
+                        <div className="flex items-start gap-2 text-muted-foreground">
+                          <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                          <span>{order.deliveryAddress}</span>
+                        </div>
+                      </div>
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <Select value={selectedRestaurant?.toString() || ""} onValueChange={(v) => setSelectedRestaurant(Number(v))}>
-          <SelectTrigger className="w-64" data-testid="select-admin-restaurant"><SelectValue placeholder="Select restaurant" /></SelectTrigger>
-          <SelectContent>
-            {restaurants?.map((r) => (
-              <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {selectedRestaurant && (
-          <Dialog open={showCreate} onOpenChange={setShowCreate}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="gap-1" onClick={resetForm} data-testid="button-add-menu-item"><Plus className="w-4 h-4" /> Add Item</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Add Menu Item</DialogTitle></DialogHeader>
-              {formFields}
-              <Button onClick={() => {
-                createItem.mutate(
-                  { data: { ...form, restaurantId: selectedRestaurant, price: Number(form.price) } },
-                  { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetMenuQueryKey(selectedRestaurant) }); setShowCreate(false); resetForm(); toast({ title: "Menu item created" }); } }
-                );
-              }} disabled={createItem.isPending}>{createItem.isPending ? "Creating..." : "Create"}</Button>
-            </DialogContent>
-          </Dialog>
+                      <Separator />
+
+                      {/* Items */}
+                      <div className="space-y-2">
+                        {order.items.map((item) => (
+                          <div key={item.menuItemId} className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-3">
+                              <img src={item.image} alt={item.name} className="w-10 h-10 rounded-lg object-cover" />
+                              <span className="font-medium">{item.name} <span className="text-muted-foreground font-normal">×{item.quantity}</span></span>
+                            </div>
+                            <span className="font-medium">₦{(item.price * item.quantity).toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <Separator />
+
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span>₦{order.subtotal.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Delivery Fee</span>
+                        <span>₦{order.deliveryFee.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-base">
+                        <span>Total</span>
+                        <span className="text-primary">₦{order.total.toLocaleString()}</span>
+                      </div>
+
+                      {/* Status progress */}
+                      <Separator />
+                      <div className="flex items-center justify-between relative py-2">
+                        <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-border -translate-y-1/2" />
+                        {STATUS_FLOW.map((s, i) => {
+                          const c = STATUS_CONFIG[s];
+                          const SIcon = c.icon;
+                          const done = STATUS_FLOW.indexOf(order.status) >= i;
+                          return (
+                            <div key={s} className="relative flex flex-col items-center z-10">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${done ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                                <SIcon className="w-4 h-4" />
+                              </div>
+                              <span className={`text-xs mt-1 font-medium hidden sm:block ${done ? "text-primary" : "text-muted-foreground"}`}>{c.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
-      </div>
-
-      {!selectedRestaurant ? (
-        <p className="text-muted-foreground text-center py-8">Select a restaurant to manage menu items</p>
-      ) : isLoading ? (
-        <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div>
-      ) : menuItems?.length === 0 ? (
-        <p className="text-muted-foreground text-center py-8">No menu items</p>
-      ) : (
-        <div className="space-y-3">
-          {menuItems?.map((item) => (
-            <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border bg-card" data-testid={`admin-menu-item-${item.id}`}>
-              <div className="flex items-center gap-3">
-                <img src={item.image} alt={item.name} className="w-12 h-12 rounded-lg object-cover" />
-                <div>
-                  <p className="font-medium text-card-foreground">{item.name}</p>
-                  <p className="text-sm text-primary font-bold">N{item.price.toLocaleString()}</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Dialog open={editId === item.id} onOpenChange={(open) => { if (!open) setEditId(null); }}>
-                  <DialogTrigger asChild>
-                    <Button size="icon" variant="ghost" onClick={() => { setEditId(item.id); setForm({ name: item.name, description: item.description, price: item.price, image: item.image, category: item.category }); }}>
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader><DialogTitle>Edit Menu Item</DialogTitle></DialogHeader>
-                    {formFields}
-                    <Button onClick={() => {
-                      updateItem.mutate(
-                        { id: item.id, data: { ...form, price: Number(form.price) } },
-                        { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetMenuQueryKey(selectedRestaurant) }); setEditId(null); resetForm(); toast({ title: "Menu item updated" }); } }
-                      );
-                    }} disabled={updateItem.isPending}>{updateItem.isPending ? "Saving..." : "Save"}</Button>
-                  </DialogContent>
-                </Dialog>
-                <Button size="icon" variant="ghost" className="text-destructive" onClick={() => {
-                  deleteItem.mutate({ id: item.id }, {
-                    onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetMenuQueryKey(selectedRestaurant) }); toast({ title: "Menu item deleted" }); }
-                  });
-                }}>
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ApplicationsTab() {
-  const { data: applications, isLoading } = useListApplications();
-
-  if (isLoading) {
-    return <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}</div>;
-  }
-
-  if (!applications?.length) {
-    return <p className="text-muted-foreground text-center py-8">No applications yet</p>;
-  }
-
-  return (
-    <div className="space-y-3">
-      {applications.map((app) => (
-        <div key={app.id} className="rounded-xl border bg-card p-4" data-testid={`admin-application-${app.id}`}>
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="font-semibold text-card-foreground">{app.fullName}</p>
-              <p className="text-sm text-muted-foreground">{app.email} | {app.phone}</p>
-              <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium capitalize">{app.role.replace("_", " ")}</span>
-            </div>
-            <p className="text-xs text-muted-foreground">{new Date(app.createdAt).toLocaleDateString()}</p>
-          </div>
-          {app.portfolioLink && <p className="text-sm text-primary mt-2">Portfolio: {app.portfolioLink}</p>}
-          {app.message && <p className="text-sm text-muted-foreground mt-1">{app.message}</p>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export default function Admin() {
-  return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-            <LayoutDashboard className="w-5 h-5 text-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Admin Dashboard</h1>
-            <p className="text-sm text-muted-foreground">Manage restaurants, menu items, and applications</p>
-          </div>
-        </div>
-
-        <Tabs defaultValue="dashboard">
-          <TabsList className="mb-6">
-            <TabsTrigger value="dashboard" data-testid="tab-dashboard"><LayoutDashboard className="w-4 h-4 mr-1" /> Dashboard</TabsTrigger>
-            <TabsTrigger value="restaurants" data-testid="tab-restaurants"><Store className="w-4 h-4 mr-1" /> Restaurants</TabsTrigger>
-            <TabsTrigger value="menu" data-testid="tab-menu"><UtensilsCrossed className="w-4 h-4 mr-1" /> Menu Items</TabsTrigger>
-            <TabsTrigger value="applications" data-testid="tab-applications"><Users className="w-4 h-4 mr-1" /> Applications</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="dashboard"><DashboardTab /></TabsContent>
-          <TabsContent value="restaurants"><RestaurantsTab /></TabsContent>
-          <TabsContent value="menu"><MenuItemsTab /></TabsContent>
-          <TabsContent value="applications"><ApplicationsTab /></TabsContent>
-        </Tabs>
       </div>
     </div>
   );

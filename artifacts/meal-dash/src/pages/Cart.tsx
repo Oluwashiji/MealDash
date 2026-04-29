@@ -1,11 +1,22 @@
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { ShoppingCart, Plus, Minus, Trash2, ArrowRight, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/contexts/CartContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { Separator } from "@/components/ui/separator";
 
 export default function Cart() {
   const { cart, updateQuantity, removeItem, clearCart, subtotal, total, itemCount } = useCart();
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+
+  const handleCheckout = () => {
+    if (!user) {
+      setLocation("/auth?from=/checkout");
+    } else {
+      setLocation("/checkout");
+    }
+  };
 
   if (itemCount === 0) {
     return (
@@ -40,43 +51,22 @@ export default function Cart() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-4">
             {cart.items.map((item) => (
-              <div
-                key={item.menuItemId}
-                className="flex items-center gap-4 p-4 rounded-xl border bg-card"
-                data-testid={`cart-item-${item.menuItemId}`}
-              >
+              <div key={item.menuItemId} className="flex items-center gap-4 p-4 rounded-xl border bg-card" data-testid={`cart-item-${item.menuItemId}`}>
                 <img src={item.image} alt={item.name} className="w-20 h-20 rounded-lg object-cover" />
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-card-foreground truncate">{item.name}</h3>
-                  <p className="text-primary font-bold mt-1">N{item.price.toLocaleString()}</p>
+                  <p className="text-primary font-bold mt-1">₦{item.price.toLocaleString()}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="h-8 w-8 rounded-full"
-                    onClick={() => updateQuantity(item.menuItemId, item.quantity - 1)}
-                    data-testid={`button-cart-decrease-${item.menuItemId}`}
-                  >
+                  <Button size="icon" variant="outline" className="h-8 w-8 rounded-full" onClick={() => updateQuantity(item.menuItemId, item.quantity - 1)} data-testid={`button-cart-decrease-${item.menuItemId}`}>
                     <Minus className="w-3 h-3" />
                   </Button>
                   <span className="font-semibold w-6 text-center" data-testid={`text-cart-quantity-${item.menuItemId}`}>{item.quantity}</span>
-                  <Button
-                    size="icon"
-                    className="h-8 w-8 rounded-full"
-                    onClick={() => updateQuantity(item.menuItemId, item.quantity + 1)}
-                    data-testid={`button-cart-increase-${item.menuItemId}`}
-                  >
+                  <Button size="icon" className="h-8 w-8 rounded-full" onClick={() => updateQuantity(item.menuItemId, item.quantity + 1)} data-testid={`button-cart-increase-${item.menuItemId}`}>
                     <Plus className="w-3 h-3" />
                   </Button>
                 </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="text-destructive h-8 w-8"
-                  onClick={() => removeItem(item.menuItemId)}
-                  data-testid={`button-remove-${item.menuItemId}`}
-                >
+                <Button size="icon" variant="ghost" className="text-destructive h-8 w-8" onClick={() => removeItem(item.menuItemId)} data-testid={`button-remove-${item.menuItemId}`}>
                   <Trash2 className="w-4 h-4" />
                 </Button>
               </div>
@@ -87,19 +77,28 @@ export default function Cart() {
             <div className="rounded-xl border bg-card p-6 sticky top-24" data-testid="order-summary">
               <h3 className="font-semibold text-lg text-card-foreground mb-4">Order Summary</h3>
 
+              {/* Logged-in user info preview */}
+              {user && (
+                <div className="mb-4 p-3 rounded-lg bg-primary/5 border border-primary/20 text-sm">
+                  <p className="font-medium text-primary mb-1">Delivering to</p>
+                  <p className="text-foreground font-semibold">{user.name}</p>
+                  {user.address && <p className="text-muted-foreground text-xs mt-0.5">{user.address}</p>}
+                </div>
+              )}
+
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal ({itemCount} items)</span>
-                  <span className="font-medium" data-testid="text-subtotal">N{subtotal.toLocaleString()}</span>
+                  <span className="font-medium" data-testid="text-subtotal">₦{subtotal.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Delivery Fee</span>
-                  <span className="font-medium" data-testid="text-delivery-fee">N{cart.deliveryFee.toLocaleString()}</span>
+                  <span className="font-medium" data-testid="text-delivery-fee">₦{cart.deliveryFee.toLocaleString()}</span>
                 </div>
                 <Separator />
                 <div className="flex justify-between text-lg">
                   <span className="font-semibold">Total</span>
-                  <span className="font-bold text-primary" data-testid="text-total">N{total.toLocaleString()}</span>
+                  <span className="font-bold text-primary" data-testid="text-total">₦{total.toLocaleString()}</span>
                 </div>
               </div>
 
@@ -108,11 +107,16 @@ export default function Cart() {
                 <span>Estimated delivery: {cart.deliveryTimeMin}-{cart.deliveryTimeMax} min</span>
               </div>
 
-              <Link href="/checkout">
-                <Button className="w-full mt-6 gap-2" size="lg" data-testid="button-checkout">
-                  Proceed to Checkout <ArrowRight className="w-4 h-4" />
-                </Button>
-              </Link>
+              <Button className="w-full mt-6 gap-2" size="lg" onClick={handleCheckout} data-testid="button-checkout">
+                {user ? "Proceed to Checkout" : "Sign in to Checkout"}
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+
+              {!user && (
+                <p className="text-xs text-muted-foreground text-center mt-2">
+                  You'll be asked to sign in or create an account
+                </p>
+              )}
             </div>
           </div>
         </div>

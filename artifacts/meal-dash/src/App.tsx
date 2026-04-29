@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CartProvider } from "@/contexts/CartContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { AuthProvider } from "@/contexts/AuthContext";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import Home from "@/pages/Home";
@@ -16,6 +17,7 @@ import Orders from "@/pages/Orders";
 import Careers from "@/pages/Careers";
 import SearchPage from "@/pages/SearchPage";
 import Admin from "@/pages/Admin";
+import AuthPage from "@/pages/AuthPage";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -33,6 +35,7 @@ function Router() {
       <Route path="/careers" component={Careers} />
       <Route path="/search" component={SearchPage} />
       <Route path="/admin" component={Admin} />
+      <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -42,20 +45,22 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <CartProvider>
-          <TooltipProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <div className="min-h-screen flex flex-col bg-background">
-                <Navbar />
-                <main className="flex-1">
-                  <Router />
-                </main>
-                <Footer />
-              </div>
-            </WouterRouter>
-            <Toaster />
-          </TooltipProvider>
-        </CartProvider>
+        <AuthProvider>
+          <CartProvider>
+            <TooltipProvider>
+              <WouterRouter>
+                <div className="min-h-screen flex flex-col bg-background">
+                  <Navbar />
+                  <main className="flex-1">
+                    <Router />
+                  </main>
+                  <Footer />
+                </div>
+              </WouterRouter>
+              <Toaster />
+            </TooltipProvider>
+          </CartProvider>
+        </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
