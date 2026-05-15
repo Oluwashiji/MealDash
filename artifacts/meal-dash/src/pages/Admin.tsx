@@ -1,4 +1,3 @@
-import { menuItems as baseMenuItems } from "@/lib/data";
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
@@ -12,11 +11,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
-import { restaurants, menuItems as baseMenuItems, type MenuItem } from "@/lib/data";
+import { useToast } from "@/hooks/use-toast";
+import {
+  fetchRestaurants, fetchMenuItems, createMenuItem,
+  updateMenuItem, deleteMenuItem, updateRestaurant,
+  type ApiRestaurant, type ApiMenuItem,
+} from "@/lib/api";
 
-/* ─── Types ─────────────────────────────────────────────────── */
 type OrderStatus = "pending" | "preparing" | "on_the_way" | "delivered";
-type AdminTab = "overview" | "orders" | "menu";
+type AdminTab = "overview" | "orders" | "menu" | "restaurants";
 
 type Order = {
   id: number; customerName: string; customerPhone: string; customerEmail: string;
@@ -27,7 +30,6 @@ type Order = {
   status: OrderStatus; placedAt: string;
 };
 
-/* ─── Constants ──────────────────────────────────────────────── */
 const STATUS_CONFIG: Record<OrderStatus, { label: string; icon: typeof Package; color: string; bg: string; dot: string }> = {
   pending:    { label: "Order Placed",  icon: Package,     color: "text-amber-700 dark:text-amber-300",   bg: "bg-amber-50 dark:bg-amber-950",   dot: "bg-amber-400" },
   preparing:  { label: "Preparing",    icon: ChefHat,     color: "text-blue-700 dark:text-blue-300",     bg: "bg-blue-50 dark:bg-blue-950",     dot: "bg-blue-400" },
@@ -37,33 +39,15 @@ const STATUS_CONFIG: Record<OrderStatus, { label: string; icon: typeof Package; 
 const STATUS_FLOW: OrderStatus[] = ["pending", "preparing", "on_the_way", "delivered"];
 const NEXT_LABEL: Record<string, string> = { preparing: "Mark Preparing", on_the_way: "Mark On the Way", delivered: "Mark Delivered" };
 
-/* ─── Menu storage helpers ───────────────────────────────────── */
-const MENU_KEY = "md_menu_overrides";
-
-function loadMenuItems(): MenuItem[] {
-  try {
-    const saved = localStorage.getItem(MENU_KEY);
-    return saved ? JSON.parse(saved) : null;
-  } catch { return null; }
-}
-
-function saveMenuItems(items: MenuItem[]) {
-  localStorage.setItem(MENU_KEY, JSON.stringify(items));
-}
-
-/* ─── Orders helpers ─────────────────────────────────────────── */
 function loadOrders(): Order[] {
   try { return JSON.parse(localStorage.getItem("md_orders") || "[]"); } catch { return []; }
 }
 function saveOrders(o: Order[]) { localStorage.setItem("md_orders", JSON.stringify(o)); }
 
-/* ─── Sub-components ─────────────────────────────────────────── */
 function StatCard({ icon: Icon, label, value, sub, color }: { icon: typeof Package; label: string; value: string | number; sub?: string; color: string }) {
   return (
     <div className="bg-card border rounded-2xl p-5 flex items-start gap-4">
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
-        <Icon className="w-6 h-6" />
-      </div>
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}><Icon className="w-6 h-6" /></div>
       <div>
         <p className="text-muted-foreground text-sm">{label}</p>
         <p className="text-2xl font-bold text-foreground mt-0.5">{value}</p>
@@ -88,9 +72,7 @@ function OrderCard({ order, onAdvance }: { order: Order; onAdvance: (id: number)
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-md">#{String(order.id).slice(-6)}</span>
               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.bg} ${cfg.color}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-                <Icon className="w-3 h-3" />
-                {cfg.label}
+                <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} /><Icon className="w-3 h-3" />{cfg.label}
               </span>
               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${order.paymentMethod === "cash" ? "bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300" : "bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300"}`}>
                 {order.paymentMethod === "cash" ? <Banknote className="w-3 h-3" /> : <CreditCard className="w-3 h-3" />}
@@ -100,42 +82,22 @@ function OrderCard({ order, onAdvance }: { order: Order; onAdvance: (id: number)
             <p className="font-bold text-foreground text-lg leading-tight">{order.customerName}</p>
             <p className="text-sm text-muted-foreground">{order.restaurantName} · {order.items.length} item{order.items.length !== 1 ? "s" : ""}</p>
             <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-              <Clock className="w-3 h-3" />
-              {new Date(order.placedAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}
+              <Clock className="w-3 h-3" />{new Date(order.placedAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}
             </div>
           </div>
           <div className="flex sm:flex-col items-center sm:items-end gap-3">
             <span className="text-2xl font-black text-primary">₦{order.total.toLocaleString()}</span>
-            {nextStatus && (
-              <Button size="sm" className="whitespace-nowrap text-xs h-8"
-                onClick={(e) => { e.stopPropagation(); onAdvance(order.id); }}>
-                {NEXT_LABEL[nextStatus]}
-              </Button>
-            )}
-            {order.status === "delivered" && (
-              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                <CheckCircle className="w-3 h-3" /> Complete
-              </span>
-            )}
+            {nextStatus && <Button size="sm" className="whitespace-nowrap text-xs h-8" onClick={(e) => { e.stopPropagation(); onAdvance(order.id); }}>{NEXT_LABEL[nextStatus]}</Button>}
+            {order.status === "delivered" && <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300"><CheckCircle className="w-3 h-3" /> Complete</span>}
           </div>
         </div>
-
-        {/* Status progress bar */}
         <div className="mt-4 flex items-center gap-1">
           {STATUS_FLOW.map((s, i) => {
             const done = STATUS_FLOW.indexOf(order.status) >= i;
-            return (
-              <div key={s} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${done ? "bg-primary" : "bg-border"}`} />
-            );
+            return <div key={s} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${done ? "bg-primary" : "bg-border"}`} />;
           })}
         </div>
-        <div className="flex justify-between mt-1">
-          {STATUS_FLOW.map((s) => (
-            <span key={s} className="text-[10px] text-muted-foreground">{STATUS_CONFIG[s].label}</span>
-          ))}
-        </div>
       </div>
-
       {expanded && (
         <div className="border-t bg-muted/30 px-4 sm:px-5 py-4 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
@@ -165,25 +127,16 @@ function OrderCard({ order, onAdvance }: { order: Order; onAdvance: (id: number)
   );
 }
 
-/* ─── Menu Item Form ─────────────────────────────────────────── */
-type MenuFormData = Omit<MenuItem, "id" | "restaurantId">;
-const emptyForm: MenuFormData = { name: "", description: "", price: 0, image: "", category: "", isAvailable: true, isPopular: false };
+// ── Menu Item Modal ───────────────────────────────────────────
+type MenuFormData = Omit<ApiMenuItem, "id">;
+const emptyForm: MenuFormData = { restaurantId: 1, name: "", description: "", price: 0, image: "", category: "", isAvailable: true, isPopular: false };
 
-function MenuModal({ item, restaurantId, onSave, onClose }: {
-  item?: MenuItem; restaurantId: number; onSave: (data: MenuItem) => void; onClose: () => void;
-}) {
+function MenuModal({ item, restaurants, onSave, onClose }: { item?: ApiMenuItem; restaurants: ApiRestaurant[]; onSave: (data: MenuFormData & { id?: number }) => void; onClose: () => void }) {
   const [form, setForm] = useState<MenuFormData>(item ? { ...item } : { ...emptyForm });
-
   const set = (k: keyof MenuFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const val = e.target.type === "number" ? Number(e.target.value) : e.target.value;
     setForm((p) => ({ ...p, [k]: val }));
   };
-
-  const handleSave = () => {
-    if (!form.name || !form.price || !form.category) return;
-    onSave({ ...form, id: item?.id ?? Date.now(), restaurantId });
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 backdrop-blur-sm p-4">
       <div className="bg-card border rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -192,63 +145,111 @@ function MenuModal({ item, restaurantId, onSave, onClose }: {
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-5 space-y-4">
+          <div>
+            <Label>Restaurant *</Label>
+            <select value={form.restaurantId} onChange={(e) => setForm((p) => ({ ...p, restaurantId: Number(e.target.value) }))} className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm">
+              {restaurants.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </div>
           <div><Label>Name *</Label><Input placeholder="e.g. Jollof Rice & Chicken" value={form.name} onChange={set("name")} /></div>
-          <div><Label>Description</Label><Input placeholder="Short description of the item" value={form.description} onChange={set("description")} /></div>
+          <div><Label>Description</Label><Input placeholder="Short description" value={form.description} onChange={set("description")} /></div>
           <div className="grid grid-cols-2 gap-4">
             <div><Label>Price (₦) *</Label><Input type="number" placeholder="3500" value={form.price || ""} onChange={set("price")} /></div>
-            <div>
-              <Label>Category *</Label>
-              <Input placeholder="e.g. Main, Drinks, Sides" value={form.category} onChange={set("category")} />
-            </div>
+            <div><Label>Category *</Label><Input placeholder="e.g. Main, Drinks" value={form.category} onChange={set("category")} /></div>
           </div>
-          <div><Label>Image URL</Label><Input placeholder="https://images.unsplash.com/..." value={form.image} onChange={set("image")} /></div>
+          <div>
+            <Label>Image URL</Label>
+            <Input placeholder="https://images.unsplash.com/..." value={form.image} onChange={set("image")} />
+            <p className="text-xs text-muted-foreground mt-1">Use direct image links from unsplash.com, imgur.com, or any direct .jpg/.png URL</p>
+          </div>
           {form.image && <img src={form.image} alt="preview" className="w-full h-32 object-cover rounded-xl" onError={(e) => (e.currentTarget.style.display = "none")} />}
           <div className="flex gap-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={form.isAvailable} onChange={(e) => setForm((p) => ({ ...p, isAvailable: e.target.checked }))} className="w-4 h-4 accent-primary" />
-              <span className="text-sm font-medium">Available</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={form.isPopular} onChange={(e) => setForm((p) => ({ ...p, isPopular: e.target.checked }))} className="w-4 h-4 accent-primary" />
-              <span className="text-sm font-medium">Mark as Popular</span>
-            </label>
+            <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.isAvailable} onChange={(e) => setForm((p) => ({ ...p, isAvailable: e.target.checked }))} className="w-4 h-4 accent-primary" /><span className="text-sm font-medium">Available</span></label>
+            <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.isPopular} onChange={(e) => setForm((p) => ({ ...p, isPopular: e.target.checked }))} className="w-4 h-4 accent-primary" /><span className="text-sm font-medium">Popular</span></label>
           </div>
         </div>
         <div className="flex gap-3 p-5 border-t">
           <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button className="flex-1 gap-2" onClick={handleSave} disabled={!form.name || !form.price || !form.category}>
-            <Save className="w-4 h-4" /> Save Item
-          </Button>
+          <Button className="flex-1 gap-2" onClick={() => onSave({ ...form, id: item?.id })} disabled={!form.name || !form.price || !form.category}><Save className="w-4 h-4" /> Save Item</Button>
         </div>
       </div>
     </div>
   );
 }
 
-/* ─── Main Admin Page ────────────────────────────────────────── */
+// ── Restaurant Edit Modal ─────────────────────────────────────
+function RestaurantModal({ restaurant, onSave, onClose }: { restaurant: ApiRestaurant; onSave: (data: Partial<ApiRestaurant>) => void; onClose: () => void }) {
+  const [form, setForm] = useState({ ...restaurant });
+  const set = (k: keyof ApiRestaurant) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 backdrop-blur-sm p-4">
+      <div className="bg-card border rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b">
+          <h3 className="font-bold text-lg">Edit Restaurant</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div><Label>Name</Label><Input value={form.name} onChange={set("name")} /></div>
+          <div><Label>Description</Label><Input value={form.description} onChange={set("description")} /></div>
+          <div>
+            <Label>Image URL</Label>
+            <Input value={form.image} onChange={set("image")} placeholder="https://images.unsplash.com/..." />
+            <p className="text-xs text-muted-foreground mt-1">Use a direct image link ending in .jpg, .png or .webp</p>
+          </div>
+          {form.image && <img src={form.image} alt="preview" className="w-full h-36 object-cover rounded-xl" onError={(e) => (e.currentTarget.style.display = "none")} />}
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label>Delivery Fee (₦)</Label><Input type="number" value={form.deliveryFee} onChange={(e) => setForm((p) => ({ ...p, deliveryFee: Number(e.target.value) }))} /></div>
+            <div><Label>Address</Label><Input value={form.address} onChange={set("address")} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label>Min Delivery (min)</Label><Input type="number" value={form.deliveryTimeMin} onChange={(e) => setForm((p) => ({ ...p, deliveryTimeMin: Number(e.target.value) }))} /></div>
+            <div><Label>Max Delivery (min)</Label><Input type="number" value={form.deliveryTimeMax} onChange={(e) => setForm((p) => ({ ...p, deliveryTimeMax: Number(e.target.value) }))} /></div>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={form.isOpen} onChange={(e) => setForm((p) => ({ ...p, isOpen: e.target.checked }))} className="w-4 h-4 accent-primary" />
+            <span className="text-sm font-medium">Restaurant is Open</span>
+          </label>
+        </div>
+        <div className="flex gap-3 p-5 border-t">
+          <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+          <Button className="flex-1 gap-2" onClick={() => onSave(form)}><Save className="w-4 h-4" /> Save Restaurant</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Admin ────────────────────────────────────────────────
 export default function Admin() {
   const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [tab, setTab] = useState<AdminTab>("overview");
   const [orders, setOrders] = useState<Order[]>([]);
   const [orderFilter, setOrderFilter] = useState<OrderStatus | "all">("all");
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [restaurants, setRestaurants] = useState<ApiRestaurant[]>([]);
+  const [menuItems, setMenuItems] = useState<ApiMenuItem[]>([]);
   const [menuRestaurantId, setMenuRestaurantId] = useState<number>(1);
   const [menuSearch, setMenuSearch] = useState("");
-  const [editingItem, setEditingItem] = useState<MenuItem | null | "new">(null);
+  const [editingItem, setEditingItem] = useState<ApiMenuItem | null | "new">(null);
+  const [editingRestaurant, setEditingRestaurant] = useState<ApiRestaurant | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // Import base data
-  useEffect(() => {
-     const saved = loadMenuItems();
-    setMenuItems(saved || baseMenuItems);
-  }, []);
+  const loadAll = useCallback(async () => {
+    try {
+      const [rData, mData] = await Promise.all([fetchRestaurants(), fetchMenuItems()]);
+      if (rData.length > 0) setRestaurants(rData);
+      if (mData.length > 0) setMenuItems(mData);
+    } catch {
+      toast({ title: "Could not load from server", description: "Showing cached data", variant: "destructive" });
+    }
+  }, [toast]);
 
   useEffect(() => {
     if (!user?.isAdmin) { setLocation("/auth?from=/admin"); return; }
     setOrders(loadOrders());
-  }, [user, setLocation]);
-
-  const refresh = () => setOrders(loadOrders());
+    loadAll();
+  }, [user, setLocation, loadAll]);
 
   const advanceStatus = (orderId: number) => {
     const updated = orders.map((o) => {
@@ -260,27 +261,58 @@ export default function Admin() {
     saveOrders(updated);
   };
 
-  const saveItem = useCallback((item: MenuItem) => {
-    setMenuItems((prev) => {
-      const exists = prev.find((i) => i.id === item.id);
-      const updated = exists ? prev.map((i) => i.id === item.id ? item : i) : [...prev, item];
-      saveMenuItems(updated);
-      return updated;
-    });
-    setEditingItem(null);
-  }, []);
-
-  const deleteItem = (id: number) => {
-    if (!window.confirm("Delete this menu item?")) return;
-    setMenuItems((prev) => { const u = prev.filter((i) => i.id !== id); saveMenuItems(u); return u; });
+  const saveItem = async (data: Omit<ApiMenuItem, "id"> & { id?: number }) => {
+    setSaving(true);
+    try {
+      if (data.id) {
+        const updated = await updateMenuItem(data.id, data);
+        setMenuItems((prev) => prev.map((i) => i.id === updated.id ? updated : i));
+        toast({ title: "Item updated ✅" });
+      } else {
+        const created = await createMenuItem(data);
+        setMenuItems((prev) => [...prev, created]);
+        toast({ title: "Item added ✅" });
+      }
+      setEditingItem(null);
+    } catch {
+      toast({ title: "Save failed", description: "Could not save to server", variant: "destructive" });
+    }
+    setSaving(false);
   };
 
-  const toggleAvailable = (id: number) => {
-    setMenuItems((prev) => {
-      const u = prev.map((i) => i.id === id ? { ...i, isAvailable: !i.isAvailable } : i);
-      saveMenuItems(u);
-      return u;
-    });
+  const deleteItem = async (id: number) => {
+    if (!window.confirm("Delete this menu item?")) return;
+    try {
+      await deleteMenuItem(id);
+      setMenuItems((prev) => prev.filter((i) => i.id !== id));
+      toast({ title: "Item deleted" });
+    } catch {
+      toast({ title: "Delete failed", variant: "destructive" });
+    }
+  };
+
+  const toggleAvailable = async (item: ApiMenuItem) => {
+    try {
+      const updated = await updateMenuItem(item.id, { isAvailable: !item.isAvailable });
+      setMenuItems((prev) => prev.map((i) => i.id === updated.id ? updated : i));
+      toast({ title: `${updated.name} marked ${updated.isAvailable ? "available" : "unavailable"}` });
+    } catch {
+      toast({ title: "Failed to update", variant: "destructive" });
+    }
+  };
+
+  const saveRestaurant = async (data: Partial<ApiRestaurant>) => {
+    if (!editingRestaurant) return;
+    setSaving(true);
+    try {
+      const updated = await updateRestaurant(editingRestaurant.id, data);
+      setRestaurants((prev) => prev.map((r) => r.id === updated.id ? updated : r));
+      setEditingRestaurant(null);
+      toast({ title: "Restaurant updated ✅" });
+    } catch {
+      toast({ title: "Save failed", variant: "destructive" });
+    }
+    setSaving(false);
   };
 
   if (!user?.isAdmin) return null;
@@ -293,83 +325,57 @@ export default function Admin() {
   const tabs: { key: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
     { key: "overview", label: "Overview", icon: LayoutDashboard },
     { key: "orders", label: "Orders", icon: ShoppingBag },
-    { key: "menu", label: "Menu Management", icon: MenuIcon },
+    { key: "menu", label: "Menu", icon: MenuIcon },
+    { key: "restaurants", label: "Restaurants", icon: UtensilsCrossed },
   ];
 
   return (
     <div className="min-h-screen bg-muted/30">
-      {/* Sidebar + layout */}
       <div className="flex h-screen overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-64 bg-card border-r flex-shrink-0 flex flex-col hidden md:flex">
+        <aside className="w-64 bg-card border-r flex-shrink-0 flex-col hidden md:flex">
           <div className="p-5 border-b">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow">
-                <UtensilsCrossed className="w-5 h-5 text-primary-foreground" />
-              </div>
-              <div>
-                <p className="font-bold text-foreground leading-tight">MealDash</p>
-                <p className="text-xs text-primary font-medium">Admin Panel</p>
-              </div>
+              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow"><UtensilsCrossed className="w-5 h-5 text-primary-foreground" /></div>
+              <div><p className="font-bold text-foreground leading-tight">MealDash</p><p className="text-xs text-primary font-medium">Admin Panel</p></div>
             </div>
           </div>
-
           <div className="flex-1 p-4 space-y-1">
             {tabs.map(({ key, label, icon: Icon }) => (
               <button key={key} onClick={() => setTab(key)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${tab === key ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}>
                 <Icon className="w-4 h-4" /> {label}
-                {key === "orders" && orders.filter((o) => o.status === "pending").length > 0 && (
-                  <span className="ml-auto bg-amber-400 text-amber-900 text-xs font-bold px-1.5 py-0.5 rounded-full">
-                    {orders.filter((o) => o.status === "pending").length}
-                  </span>
-                )}
+                {key === "orders" && counts["pending"] > 0 && <span className="ml-auto bg-amber-400 text-amber-900 text-xs font-bold px-1.5 py-0.5 rounded-full">{counts["pending"]}</span>}
               </button>
             ))}
           </div>
-
           <div className="p-4 border-t space-y-2">
             <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-muted">
-              <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">
-                {user.name.charAt(0)}
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">{user.name}</p>
-                <p className="text-xs text-muted-foreground">Administrator</p>
-              </div>
+              <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">{user.name.charAt(0)}</div>
+              <div className="min-w-0"><p className="text-sm font-semibold text-foreground truncate">{user.name}</p><p className="text-xs text-muted-foreground">Administrator</p></div>
             </div>
-            <button onClick={() => { logout(); setLocation("/"); }}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-destructive hover:bg-destructive/10 transition-colors">
-              <LogOut className="w-4 h-4" /> Sign Out
-            </button>
+            <button onClick={() => { logout(); setLocation("/"); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-destructive hover:bg-destructive/10 transition-colors"><LogOut className="w-4 h-4" /> Sign Out</button>
           </div>
         </aside>
 
-        {/* Main content */}
+        {/* Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Top bar */}
           <header className="bg-card border-b px-6 h-16 flex items-center justify-between flex-shrink-0">
             <div>
               <h1 className="font-bold text-xl text-foreground">{tabs.find((t) => t.key === tab)?.label}</h1>
               <p className="text-xs text-muted-foreground">{new Date().toLocaleDateString("en-NG", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={refresh} className="gap-1.5"><RefreshCw className="w-3.5 h-3.5" />Refresh</Button>
-              {/* Mobile tabs */}
+              <Button variant="outline" size="sm" onClick={loadAll} className="gap-1.5"><RefreshCw className="w-3.5 h-3.5" />Refresh</Button>
               <div className="flex md:hidden gap-1">
-                {tabs.map(({ key, icon: Icon }) => (
-                  <Button key={key} variant={tab === key ? "default" : "ghost"} size="icon" onClick={() => setTab(key)}>
-                    <Icon className="w-4 h-4" />
-                  </Button>
-                ))}
+                {tabs.map(({ key, icon: Icon }) => <Button key={key} variant={tab === key ? "default" : "ghost"} size="icon" onClick={() => setTab(key)}><Icon className="w-4 h-4" /></Button>)}
               </div>
             </div>
           </header>
 
-          {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-6">
 
-            {/* ── OVERVIEW ── */}
+            {/* OVERVIEW */}
             {tab === "overview" && (
               <div className="space-y-6">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -378,17 +384,13 @@ export default function Admin() {
                   <StatCard icon={Clock} label="Pending" value={counts["pending"] || 0} sub="Need action" color="bg-amber-100 dark:bg-amber-950 text-amber-600" />
                   <StatCard icon={Users} label="Customers" value={new Set(orders.map((o) => o.customerEmail)).size} sub="Unique" color="bg-violet-100 dark:bg-violet-950 text-violet-600" />
                 </div>
-
-                {/* Live order pipeline */}
                 <div className="bg-card border rounded-2xl p-5">
                   <h2 className="font-bold text-lg mb-4">Order Pipeline</h2>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {STATUS_FLOW.map((s) => {
-                      const cfg = STATUS_CONFIG[s];
-                      const Icon = cfg.icon;
+                      const cfg = STATUS_CONFIG[s]; const Icon = cfg.icon;
                       return (
-                        <button key={s} onClick={() => { setTab("orders"); setOrderFilter(s); }}
-                          className={`p-4 rounded-xl ${cfg.bg} text-left hover:opacity-80 transition-opacity`}>
+                        <button key={s} onClick={() => { setTab("orders"); setOrderFilter(s); }} className={`p-4 rounded-xl ${cfg.bg} text-left hover:opacity-80 transition-opacity`}>
                           <Icon className={`w-6 h-6 ${cfg.color} mb-2`} />
                           <p className={`text-3xl font-black ${cfg.color}`}>{counts[s] || 0}</p>
                           <p className={`text-sm font-medium mt-1 ${cfg.color}`}>{cfg.label}</p>
@@ -397,38 +399,19 @@ export default function Admin() {
                     })}
                   </div>
                 </div>
-
-                {/* Recent orders preview */}
                 <div className="bg-card border rounded-2xl p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="font-bold text-lg">Recent Orders</h2>
-                    <Button variant="ghost" size="sm" onClick={() => setTab("orders")}>View all</Button>
-                  </div>
-                  {orders.length === 0 ? (
-                    <div className="text-center py-10">
-                      <ShoppingBag className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
-                      <p className="text-muted-foreground">No orders yet</p>
-                    </div>
-                  ) : (
+                  <div className="flex items-center justify-between mb-4"><h2 className="font-bold text-lg">Recent Orders</h2><Button variant="ghost" size="sm" onClick={() => setTab("orders")}>View all</Button></div>
+                  {orders.length === 0 ? <div className="text-center py-10"><ShoppingBag className="w-10 h-10 text-muted-foreground mx-auto mb-2" /><p className="text-muted-foreground">No orders yet</p></div> : (
                     <div className="space-y-3">
                       {orders.slice(0, 5).map((o) => {
-                        const cfg = STATUS_CONFIG[o.status];
-                        const Icon = cfg.icon;
+                        const cfg = STATUS_CONFIG[o.status]; const Icon = cfg.icon;
                         return (
                           <div key={o.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-muted/50 transition-colors">
                             <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${cfg.bg}`}>
-                                <Icon className={`w-4 h-4 ${cfg.color}`} />
-                              </div>
-                              <div>
-                                <p className="font-semibold text-sm">{o.customerName}</p>
-                                <p className="text-xs text-muted-foreground">{o.restaurantName}</p>
-                              </div>
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${cfg.bg}`}><Icon className={`w-4 h-4 ${cfg.color}`} /></div>
+                              <div><p className="font-semibold text-sm">{o.customerName}</p><p className="text-xs text-muted-foreground">{o.restaurantName}</p></div>
                             </div>
-                            <div className="text-right">
-                              <p className="font-bold text-primary">₦{o.total.toLocaleString()}</p>
-                              <span className={`text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
-                            </div>
+                            <div className="text-right"><p className="font-bold text-primary">₦{o.total.toLocaleString()}</p><span className={`text-xs font-medium ${cfg.color}`}>{cfg.label}</span></div>
                           </div>
                         );
                       })}
@@ -438,7 +421,7 @@ export default function Admin() {
               </div>
             )}
 
-            {/* ── ORDERS ── */}
+            {/* ORDERS */}
             {tab === "orders" && (
               <div className="space-y-4">
                 <div className="flex gap-2 flex-wrap">
@@ -447,27 +430,18 @@ export default function Admin() {
                   ))}
                 </div>
                 {filteredOrders.length === 0 ? (
-                  <div className="text-center py-20 rounded-2xl border border-dashed bg-card">
-                    <Package className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                    <p className="text-muted-foreground text-lg font-medium">No orders here</p>
-                  </div>
-                ) : (
-                  filteredOrders.map((o) => <OrderCard key={o.id} order={o} onAdvance={advanceStatus} />)
-                )}
+                  <div className="text-center py-20 rounded-2xl border border-dashed bg-card"><Package className="w-12 h-12 text-muted-foreground mx-auto mb-3" /><p className="text-muted-foreground text-lg font-medium">No orders here</p></div>
+                ) : filteredOrders.map((o) => <OrderCard key={o.id} order={o} onAdvance={advanceStatus} />)}
               </div>
             )}
 
-            {/* ── MENU MANAGEMENT ── */}
+            {/* MENU */}
             {tab === "menu" && (
               <div className="space-y-5">
                 <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 flex gap-3">
                   <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-amber-800 dark:text-amber-300">
-                    Changes made here are reflected <strong>immediately</strong> on the customer-facing menu. Toggling an item unavailable hides it from customers without deleting it.
-                  </p>
+                  <p className="text-sm text-amber-800 dark:text-amber-300">Changes save to the database and are <strong>immediately visible to all customers</strong> on every device. Use direct image URLs (unsplash.com, imgur.com, etc.)</p>
                 </div>
-
-                {/* Restaurant selector + search + add */}
                 <div className="flex flex-col sm:flex-row gap-3">
                   <div className="flex gap-2 flex-wrap">
                     {restaurants.map((r) => (
@@ -479,61 +453,36 @@ export default function Admin() {
                   </div>
                   <div className="flex gap-2 ml-auto">
                     <Input placeholder="Search items..." value={menuSearch} onChange={(e) => setMenuSearch(e.target.value)} className="w-48" />
-                    <Button className="gap-2 whitespace-nowrap" onClick={() => setEditingItem("new")}>
-                      <Plus className="w-4 h-4" /> Add Item
-                    </Button>
+                    <Button className="gap-2 whitespace-nowrap" onClick={() => setEditingItem("new")}><Plus className="w-4 h-4" /> Add Item</Button>
                   </div>
                 </div>
-
-                {/* Menu items grid */}
                 {restaurantItems.length === 0 ? (
-                  <div className="text-center py-16 rounded-2xl border border-dashed bg-card">
-                    <MenuIcon className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-muted-foreground">No items found</p>
-                    <Button className="mt-4 gap-2" onClick={() => setEditingItem("new")}><Plus className="w-4 h-4" />Add First Item</Button>
-                  </div>
+                  <div className="text-center py-16 rounded-2xl border border-dashed bg-card"><MenuIcon className="w-10 h-10 text-muted-foreground mx-auto mb-2" /><p className="text-muted-foreground">No items found</p><Button className="mt-4 gap-2" onClick={() => setEditingItem("new")}><Plus className="w-4 h-4" />Add First Item</Button></div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {restaurantItems.map((item) => (
                       <div key={item.id} className={`bg-card border rounded-2xl overflow-hidden transition-all ${!item.isAvailable ? "opacity-60" : ""}`}>
                         <div className="relative h-36 bg-muted">
-                          {item.image ? (
-                            <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-muted-foreground"><Image className="w-8 h-8" /></div>
-                          )}
+                          {item.image ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={(e) => (e.currentTarget.style.display = "none")} /> : <div className="w-full h-full flex items-center justify-center text-muted-foreground"><Image className="w-8 h-8" /></div>}
                           <div className="absolute top-2 left-2 flex gap-1">
                             {item.isPopular && <span className="px-2 py-0.5 rounded-full bg-accent text-accent-foreground text-xs font-semibold flex items-center gap-1"><Star className="w-3 h-3" />Popular</span>}
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${item.isAvailable ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300" : "bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300"}`}>
-                              {item.isAvailable ? "Available" : "Unavailable"}
-                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${item.isAvailable ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300" : "bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300"}`}>{item.isAvailable ? "Available" : "Unavailable"}</span>
                           </div>
                         </div>
                         <div className="p-4">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="font-bold text-foreground truncate">{item.name}</p>
-                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>
-                              <div className="flex items-center gap-2 mt-2">
-                                <span className="text-primary font-bold text-lg">₦{item.price.toLocaleString()}</span>
-                                <span className="text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground">{item.category}</span>
-                              </div>
-                            </div>
+                          <p className="font-bold text-foreground truncate">{item.name}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{item.description}</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className="text-primary font-bold text-lg">₦{item.price.toLocaleString()}</span>
+                            <span className="text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground">{item.category}</span>
                           </div>
                           <div className="flex items-center gap-2 mt-3 pt-3 border-t">
-                            <button onClick={() => toggleAvailable(item.id)}
-                              className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1.5 rounded-lg transition-colors flex-1 justify-center ${item.isAvailable ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}>
+                            <button onClick={() => toggleAvailable(item)} className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1.5 rounded-lg transition-colors flex-1 justify-center ${item.isAvailable ? "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}>
                               {item.isAvailable ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
                               {item.isAvailable ? "Mark Unavailable" : "Mark Available"}
                             </button>
-                            <button onClick={() => setEditingItem(item)}
-                              className="p-1.5 rounded-lg bg-muted hover:bg-primary/10 hover:text-primary transition-colors">
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => deleteItem(item.id)}
-                              className="p-1.5 rounded-lg bg-muted hover:bg-destructive/10 hover:text-destructive transition-colors">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <button onClick={() => setEditingItem(item)} className="p-1.5 rounded-lg bg-muted hover:bg-primary/10 hover:text-primary transition-colors"><Pencil className="w-4 h-4" /></button>
+                            <button onClick={() => deleteItem(item.id)} className="p-1.5 rounded-lg bg-muted hover:bg-destructive/10 hover:text-destructive transition-colors"><Trash2 className="w-4 h-4" /></button>
                           </div>
                         </div>
                       </div>
@@ -542,18 +491,41 @@ export default function Admin() {
                 )}
               </div>
             )}
+
+            {/* RESTAURANTS */}
+            {tab === "restaurants" && (
+              <div className="space-y-4">
+                <p className="text-muted-foreground text-sm">Click Edit on any restaurant to update its image, name, description, delivery info, or open/closed status.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {restaurants.map((r) => (
+                    <div key={r.id} className="bg-card border rounded-2xl overflow-hidden">
+                      <div className="relative h-36 bg-muted">
+                        <img src={r.image} alt={r.name} className="w-full h-full object-cover" onError={(e) => (e.currentTarget.style.display = "none")} />
+                        <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs font-semibold ${r.isOpen ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{r.isOpen ? "Open" : "Closed"}</span>
+                      </div>
+                      <div className="p-4">
+                        <p className="font-bold text-foreground">{r.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{r.cuisine} · {r.address}</p>
+                        <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1"><Star className="w-3 h-3 text-amber-400 fill-amber-400" />{r.rating}</span>
+                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{r.deliveryTimeMin}–{r.deliveryTimeMax} min</span>
+                        </div>
+                        <Button size="sm" className="w-full mt-3 gap-2" variant="outline" onClick={() => setEditingRestaurant(r)}><Pencil className="w-3.5 h-3.5" /> Edit Restaurant</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Menu item modal */}
       {editingItem !== null && (
-        <MenuModal
-          item={editingItem === "new" ? undefined : editingItem}
-          restaurantId={menuRestaurantId}
-          onSave={saveItem}
-          onClose={() => setEditingItem(null)}
-        />
+        <MenuModal item={editingItem === "new" ? undefined : editingItem} restaurants={restaurants} onSave={saveItem} onClose={() => setEditingItem(null)} />
+      )}
+      {editingRestaurant && (
+        <RestaurantModal restaurant={editingRestaurant} onSave={saveRestaurant} onClose={() => setEditingRestaurant(null)} />
       )}
     </div>
   );

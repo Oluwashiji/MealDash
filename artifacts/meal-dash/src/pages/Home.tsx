@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { restaurants, popularMeals, menuItems } from "@/lib/data";
+import { useRestaurants, useAllMenuItems } from "@/lib/useData";
+import type { ApiRestaurant, ApiMenuItem } from "@/lib/api";
 
 const CATEGORIES = [
   { label: "All", icon: ShoppingBag, filter: "" },
@@ -49,15 +50,15 @@ function SectionHeader({ title, sub, href }: { title: string; sub?: string; href
   );
 }
 
-function RestaurantCard({ r }: { r: typeof restaurants[0] }) {
+function RestaurantCard({ r }: { r: ApiRestaurant }) {
   return (
     <Link href={`/restaurant/${r.id}`}>
       <div className="flex-shrink-0 w-64 sm:w-72 rounded-2xl border bg-card overflow-hidden group hover:shadow-lg transition-all duration-300 hover:-translate-y-1 cursor-pointer snap-start">
         <div className="relative h-40 bg-muted overflow-hidden">
-          <img src={r.image} alt={r.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+          <img src={r.image} alt={r.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => { (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&h=400&fit=crop"; }} />
           {!r.isOpen && <div className="absolute inset-0 bg-black/60 flex items-center justify-center"><span className="text-white font-bold text-lg">Closed</span></div>}
           <div className="absolute top-2 left-2 flex gap-1 flex-wrap">
-            {r.tags.map((tag) => <span key={tag} className="px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-xs font-semibold">{tag}</span>)}
+            {(r.tags || []).map((tag) => <span key={tag} className="px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-xs font-semibold">{tag}</span>)}
           </div>
         </div>
         <div className="p-3">
@@ -66,7 +67,7 @@ function RestaurantCard({ r }: { r: typeof restaurants[0] }) {
           <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1"><Star className="w-3 h-3 text-amber-400 fill-amber-400" /><span className="font-semibold text-foreground">{r.rating}</span></span>
             <span className="flex items-center gap-1"><Clock className="w-3 h-3 text-primary" />{r.deliveryTimeMin}–{r.deliveryTimeMax} min</span>
-            <span className="flex items-center gap-1"><Truck className="w-3 h-3" />₦{r.deliveryFee.toLocaleString()}</span>
+            <span className="flex items-center gap-1"><Truck className="w-3 h-3" />₦{(r.deliveryFee || 0).toLocaleString()}</span>
           </div>
           {r.minOrder && <p className="text-xs text-muted-foreground mt-1">Min. order ₦{r.minOrder.toLocaleString()}</p>}
         </div>
@@ -75,20 +76,19 @@ function RestaurantCard({ r }: { r: typeof restaurants[0] }) {
   );
 }
 
-function MealCard({ meal }: { meal: typeof popularMeals[0] }) {
+function MealCard({ meal, restaurant }: { meal: ApiMenuItem; restaurant: ApiRestaurant | undefined }) {
   const { addItem } = useCart();
   const { toast } = useToast();
-  const restaurant = restaurants.find((r) => r.id === meal.restaurantId)!;
   if (!restaurant) return null;
   return (
     <div className="flex-shrink-0 w-48 sm:w-56 rounded-2xl border bg-card overflow-hidden group hover:shadow-md transition-all duration-300 snap-start">
       <div className="relative h-32 bg-muted overflow-hidden">
-        <img src={meal.image} alt={meal.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+        <img src={meal.image} alt={meal.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => { (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=300&fit=crop"; }} />
         {meal.isPopular && <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-amber-400 text-amber-900 text-xs font-bold flex items-center gap-1"><Flame className="w-3 h-3" /> Popular</span>}
       </div>
       <div className="p-3">
         <h3 className="font-semibold text-card-foreground text-sm line-clamp-1">{meal.name}</h3>
-        <p className="text-xs text-muted-foreground">{meal.restaurantName}</p>
+        <p className="text-xs text-muted-foreground">{restaurant.name}</p>
         <div className="flex items-center justify-between mt-2">
           <span className="font-bold text-primary text-sm">₦{meal.price.toLocaleString()}</span>
           <button
@@ -111,6 +111,8 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const { user } = useAuth();
+  const { restaurants } = useRestaurants();
+  const { menuItems } = useAllMenuItems();
 
   const filteredRestaurants = restaurants.filter((r) => {
     const matchesCat = activeCategory ? r.cuisine === activeCategory : true;
@@ -120,9 +122,11 @@ export default function Home() {
 
   const topRestaurants = filteredRestaurants.filter((r) => r.category === "top");
   const campusRestaurants = filteredRestaurants.filter((r) => r.category === "campus");
+  const popularMeals = menuItems.filter((m) => m.isPopular && m.isAvailable);
+  const dessertIds = [901, 902, 903, 905, 703, 805];
+  const desserts = menuItems.filter((m) => dessertIds.includes(m.id) && m.isAvailable);
 
   const lastOrder = (() => { try { const o = localStorage.getItem("md_orders"); return o ? JSON.parse(o)[0] : null; } catch { return null; } })();
-  const reorderItems = lastOrder ? popularMeals.filter((m) => lastOrder.items.some((i: { menuItemId: number }) => i.menuItemId === m.id)).slice(0, 6) : [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -138,21 +142,17 @@ export default function Home() {
               {user ? `Hey ${user.name.split(" ")[0]} 👋` : "Hungry?"}<br />
               <span className="text-white/90">Food is on its way.</span>
             </h1>
-            <p className="mt-3 text-white/80 text-base sm:text-lg max-w-md">
-              Order from Ibadan's best restaurants. Fresh meals delivered in 30 minutes or less.
-            </p>
+            <p className="mt-3 text-white/80 text-base sm:text-lg max-w-md">Order from Ibadan's best restaurants. Fresh meals delivered in 30 minutes or less.</p>
             <div className="mt-6 flex gap-2 max-w-md">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input placeholder="Search restaurants or dishes..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 bg-white text-foreground border-0 h-12 rounded-xl shadow-lg" />
               </div>
-              <Link href="/restaurants">
-                <Button size="lg" variant="secondary" className="h-12 rounded-xl font-semibold shadow-lg"><Search className="w-4 h-4" /></Button>
-              </Link>
+              <Link href="/restaurants"><Button size="lg" variant="secondary" className="h-12 rounded-xl font-semibold shadow-lg"><Search className="w-4 h-4" /></Button></Link>
             </div>
             <div className="flex items-center gap-6 mt-6 text-white/80 text-sm flex-wrap">
-              <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" /> 30 min avg delivery</span>
-              <span className="flex items-center gap-1.5"><ChefHat className="w-4 h-4" /> 9 restaurants</span>
+              <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" /> 30 min avg</span>
+              <span className="flex items-center gap-1.5"><ChefHat className="w-4 h-4" /> {restaurants.length} restaurants</span>
               <span className="flex items-center gap-1.5"><Star className="w-4 h-4 fill-white" /> 4.4 avg rating</span>
             </div>
           </div>
@@ -160,7 +160,7 @@ export default function Home() {
       </section>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Promo banners */}
+        {/* Promos */}
         <div className="py-5">
           <HScroll>
             {PROMOS.map((p) => (
@@ -186,18 +186,29 @@ export default function Home() {
         </div>
 
         {/* Order Again */}
-        {lastOrder && reorderItems.length > 0 && (
+        {lastOrder && (
           <section className="pb-8">
             <SectionHeader title="🔄 Order Again" sub={`Your last order from ${lastOrder.restaurantName}`} href="/orders" />
-            <HScroll>{reorderItems.map((meal) => <MealCard key={meal.id} meal={meal} />)}</HScroll>
+            <HScroll>
+              {lastOrder.items.slice(0, 6).map((item: ApiMenuItem) => {
+                const r = restaurants.find((r) => r.name === lastOrder.restaurantName);
+                return <MealCard key={item.id} meal={item} restaurant={r} />;
+              })}
+            </HScroll>
           </section>
         )}
 
         {/* Popular Meals */}
-        <section className="pb-8">
-          <SectionHeader title="🔥 Popular Right Now" sub="Most ordered dishes in Ibadan" href="/restaurants" />
-          <HScroll>{popularMeals.slice(0, 12).map((meal) => <MealCard key={meal.id} meal={meal} />)}</HScroll>
-        </section>
+        {popularMeals.length > 0 && (
+          <section className="pb-8">
+            <SectionHeader title="🔥 Popular Right Now" sub="Most ordered dishes in Ibadan" href="/restaurants" />
+            <HScroll>
+              {popularMeals.slice(0, 12).map((meal) => (
+                <MealCard key={meal.id} meal={meal} restaurant={restaurants.find((r) => r.id === meal.restaurantId)} />
+              ))}
+            </HScroll>
+          </section>
+        )}
 
         {/* Top Restaurants */}
         {topRestaurants.length > 0 && (
@@ -207,7 +218,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* Featured deal banner */}
+        {/* Featured deal */}
         <section className="pb-8">
           <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-amber-500 to-orange-500 p-6 sm:p-8">
             <div className="absolute right-0 top-0 bottom-0 w-1/2 opacity-20" style={{ background: "radial-gradient(circle at 80% 50%, white 0%, transparent 70%)" }} />
@@ -215,9 +226,7 @@ export default function Home() {
               <p className="text-white/80 text-sm font-semibold uppercase tracking-wide">Limited time</p>
               <h2 className="text-2xl sm:text-3xl font-black text-white mt-1">Free delivery this weekend 🚀</h2>
               <p className="text-white/80 mt-2">No minimum order. All restaurants. Saturday & Sunday only.</p>
-              <Link href="/restaurants">
-                <Button className="mt-4 bg-white text-orange-600 hover:bg-white/90 font-bold gap-2">Order Now <ArrowRight className="w-4 h-4" /></Button>
-              </Link>
+              <Link href="/restaurants"><Button className="mt-4 bg-white text-orange-600 hover:bg-white/90 font-bold gap-2">Order Now <ArrowRight className="w-4 h-4" /></Button></Link>
             </div>
           </div>
         </section>
@@ -231,26 +240,24 @@ export default function Home() {
         )}
 
         {/* Sweet Treats */}
-        <section className="pb-8">
-          <SectionHeader title="🍦 Sweet Treats" sub="Desserts and ice cream delivered fresh" href="/restaurant/9" />
-          <HScroll>
-            {popularMeals.filter((m) => [901, 902, 903, 905, 703, 805].includes(m.id)).map((meal) => <MealCard key={meal.id} meal={meal} />)}
-          </HScroll>
-        </section>
+        {desserts.length > 0 && (
+          <section className="pb-8">
+            <SectionHeader title="🍦 Sweet Treats" sub="Desserts and ice cream delivered fresh" href="/restaurant/9" />
+            <HScroll>
+              {desserts.map((meal) => <MealCard key={meal.id} meal={meal} restaurant={restaurants.find((r) => r.id === meal.restaurantId)} />)}
+            </HScroll>
+          </section>
+        )}
 
         {/* Careers CTA */}
         <section className="pb-10">
           <div className="rounded-3xl bg-card border p-6 sm:p-10 flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
-            <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center flex-shrink-0 shadow-lg">
-              <ChefHat className="w-8 h-8 text-primary-foreground" />
-            </div>
+            <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center flex-shrink-0 shadow-lg"><ChefHat className="w-8 h-8 text-primary-foreground" /></div>
             <div className="flex-1">
               <h2 className="text-2xl font-bold text-foreground">Want to become a delivery rider?</h2>
-              <p className="text-muted-foreground mt-1">Earn up to ₦150,000/month delivering food across Ibadan. Flexible hours, great pay.</p>
+              <p className="text-muted-foreground mt-1">Earn up to ₦150,000/month delivering food across Ibadan.</p>
             </div>
-            <Link href="/careers">
-              <Button size="lg" className="gap-2 flex-shrink-0">Apply Now <ArrowRight className="w-4 h-4" /></Button>
-            </Link>
+            <Link href="/careers"><Button size="lg" className="gap-2 flex-shrink-0">Apply Now <ArrowRight className="w-4 h-4" /></Button></Link>
           </div>
         </section>
       </div>

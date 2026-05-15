@@ -1,18 +1,18 @@
-import { Router, type IRouter } from "express";
-import healthRouter from "./health";
+// artifacts/api-server/src/routes/index.ts
+// Replace your existing routes/index.ts with this
+import { Router } from "express";
 import restaurantsRouter from "./restaurants";
 import menuRouter from "./menu";
 import ordersRouter from "./orders";
-import applicationsRouter from "./applications";
-import dashboardRouter from "./dashboard";
+import healthRouter from "./health";
+import adminRouter from "./admin";
 
-const router: IRouter = Router();
+const router = Router();
 
-router.use(healthRouter);
-router.use(restaurantsRouter);
-router.use(menuRouter);
-router.use(ordersRouter);
-router.use(applicationsRouter);
-router.use(dashboardRouter);
+router.use("/health", healthRouter);
+router.use("/restaurants", restaurantsRouter);
+router.use("/menu", menuRouter);
+router.use("/orders", ordersRouter);
+router.use("/admin", adminRouter);
 
 export default router;

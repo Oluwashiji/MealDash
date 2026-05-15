@@ -11,7 +11,7 @@ export type MenuItem = {
 };
 
 export const restaurants: Restaurant[] = [
-  { id: 1, name: "Item 7", description: "Premium Nigerian cuisine. Famous for party rice, shawarma and grilled chicken", image: "/images/item7.jpg", category: "top", rating: 4.7, deliveryTimeMin: 25, deliveryTimeMax: 40, deliveryFee: 800, tags: ["Top Rated", "Fast Delivery"], isOpen: true, address: "Ring Road, Ibadan", cuisine: "Nigerian", minOrder: 2000 },
+  { id: 1, name: "Item 7", description: "Premium Nigerian cuisine. Famous for party rice, shawarma and grilled chicken", image: "https://i.imgur.com/item7placeholder.jpg", category: "top", rating: 4.7, deliveryTimeMin: 25, deliveryTimeMax: 40, deliveryFee: 800, tags: ["Top Rated", "Fast Delivery"], isOpen: true, address: "Ring Road, Ibadan", cuisine: "Nigerian", minOrder: 2000 },
   { id: 2, name: "Kilimanjaro", description: "Fast food and continental dishes. Known for shawarma, burgers, and quick bites", image: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&h=400&fit=crop", category: "top", rating: 4.5, deliveryTimeMin: 20, deliveryTimeMax: 35, deliveryFee: 600, tags: ["Fast Delivery", "Popular"], isOpen: true, address: "Dugbe, Ibadan", cuisine: "Continental", minOrder: 1500 },
   { id: 3, name: "Chicken Republic", description: "Nigeria's favorite chicken restaurant. Crispy fried chicken, wraps, and sides", image: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600&h=400&fit=crop", category: "top", rating: 4.3, deliveryTimeMin: 15, deliveryTimeMax: 30, deliveryFee: 500, tags: ["Fast Delivery"], isOpen: true, address: "Challenge, Ibadan", cuisine: "Fast Food", minOrder: 1000 },
   { id: 4, name: "KFC", description: "Finger lickin' good! World-famous fried chicken, zinger burgers, and more", image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&h=400&fit=crop", category: "top", rating: 4.4, deliveryTimeMin: 20, deliveryTimeMax: 35, deliveryFee: 700, tags: ["Top Rated"], isOpen: true, address: "Bodija, Ibadan", cuisine: "Fast Food", minOrder: 2000 },
@@ -32,7 +32,7 @@ export const menuItems: MenuItem[] = [
   { id: 201, restaurantId: 2, name: "Shawarma", description: "Loaded chicken shawarma with fresh vegetables and special sauce", price: 2500, image: "https://images.unsplash.com/photo-1529006557810-274b9b2fc783?w=400&h=300&fit=crop", category: "Wraps", isAvailable: true, isPopular: true },
   { id: 202, restaurantId: 2, name: "Beef Burger", description: "Juicy beef patty with cheese, lettuce, and tomato", price: 3000, image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&h=300&fit=crop", category: "Burgers", isAvailable: true, isPopular: true },
   { id: 203, restaurantId: 2, name: "Chicken Wings", description: "Crispy chicken wings with dipping sauce", price: 2800, image: "https://images.unsplash.com/photo-1567620832903-9fc6debc209f?w=400&h=300&fit=crop", category: "Sides", isAvailable: true, isPopular: false },
-  { id: 204, restaurantId: 2, name: "Meat Pie", description: "Flaky pastry filled with seasoned minced meat and potatoes", price: 800, image: "https://images.unsplash.com/photo-1559742811-822873691df8?w=400&h=300&fit=crop", category: "Snacks", isAvailable: true, isPopular: false },
+  { id: 204, restaurantId: 2, name: "Meat Pie", description: "Flaky pastry filled with seasoned minced meat and potatoes", price: 800, image: "https://images.unsplash.com/photo-1559742811-822873691df8?w=400&h=300&fit=crop", category: "Snacks", isAvailable: true, isPopular: true },
   { id: 301, restaurantId: 3, name: "Crunchy Chicken", description: "Golden crispy fried chicken pieces", price: 2200, image: "https://images.unsplash.com/photo-1626645738196-c2a7c87a8f58?w=400&h=300&fit=crop", category: "Chicken", isAvailable: true, isPopular: true },
   { id: 302, restaurantId: 3, name: "Chicken Wrap", description: "Grilled chicken wrap with salad and mayo", price: 1800, image: "https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=400&h=300&fit=crop", category: "Wraps", isAvailable: true, isPopular: false },
   { id: 303, restaurantId: 3, name: "Rice Bowl", description: "Rice with chicken and pepper sauce", price: 2000, image: "https://images.unsplash.com/photo-1512058564366-18510be2db19?w=400&h=300&fit=crop", category: "Bowls", isAvailable: true, isPopular: true },
@@ -61,20 +61,36 @@ export const menuItems: MenuItem[] = [
   { id: 703, restaurantId: 7, name: "Ice Cream Sundae", description: "Vanilla ice cream with chocolate syrup and toppings", price: 1000, image: "https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=400&h=300&fit=crop", category: "Desserts", isAvailable: true, isPopular: true },
 ];
 
-export const popularMeals = menuItems
-  .filter((m) => m.isPopular)
-  .map((m) => ({
-    ...m,
-    restaurantName: restaurants.find((r) => r.id === m.restaurantId)?.name ?? "",
-    deliveryTimeMin: restaurants.find((r) => r.id === m.restaurantId)?.deliveryTimeMin ?? 20,
-    deliveryTimeMax: restaurants.find((r) => r.id === m.restaurantId)?.deliveryTimeMax ?? 40,
-  }));
+const MENU_KEY = "md_menu_overrides";
 
+// Always read live items — merges base data with admin overrides/additions
 export function getLiveMenuItems(): MenuItem[] {
   try {
-    const saved = localStorage.getItem("md_menu_overrides");
-    return saved ? JSON.parse(saved) : menuItems;
+    const saved = localStorage.getItem(MENU_KEY);
+    if (!saved) return menuItems;
+    const overrides: MenuItem[] = JSON.parse(saved);
+    // Merge: admin items replace base items with same id; new items (not in base) are appended
+    const baseIds = new Set(menuItems.map((m) => m.id));
+    const overrideMap = new Map(overrides.map((m) => [m.id, m]));
+    const merged = menuItems.map((m) => overrideMap.get(m.id) ?? m);
+    const newItems = overrides.filter((m) => !baseIds.has(m.id));
+    return [...merged, ...newItems];
   } catch {
     return menuItems;
   }
 }
+
+// Live popular meals — reads from admin overrides
+export function getLivePopularMeals() {
+  return getLiveMenuItems()
+    .filter((m) => m.isPopular && m.isAvailable)
+    .map((m) => ({
+      ...m,
+      restaurantName: restaurants.find((r) => r.id === m.restaurantId)?.name ?? "",
+      deliveryTimeMin: restaurants.find((r) => r.id === m.restaurantId)?.deliveryTimeMin ?? 20,
+      deliveryTimeMax: restaurants.find((r) => r.id === m.restaurantId)?.deliveryTimeMax ?? 40,
+    }));
+}
+
+// Static exports kept for backward compat
+export const popularMeals = getLivePopularMeals();
