@@ -1,7 +1,5 @@
 // artifacts/meal-dash/src/lib/api.ts
-// Central API client — reads/writes to the backend DB
-
-const BASE = "/api";
+// All API calls to the backend. Uses relative URLs so they work on any domain.
 
 export type ApiRestaurant = {
   id: number; name: string; description: string; image: string;
@@ -16,56 +14,47 @@ export type ApiMenuItem = {
   isAvailable: boolean; isPopular: boolean;
 };
 
-// ── Restaurants ──────────────────────────────────────────────
+const BASE = "/api/admin";
 
-export async function fetchRestaurants(): Promise<ApiRestaurant[]> {
-  const res = await fetch(`${BASE}/admin/restaurants`);
-  if (!res.ok) throw new Error("Failed to fetch restaurants");
+async function req<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "Unknown error");
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
   return res.json();
 }
 
-export async function updateRestaurant(id: number, data: Partial<ApiRestaurant>): Promise<ApiRestaurant> {
-  const res = await fetch(`${BASE}/admin/restaurants/${id}`, {
+// ── Restaurants ──────────────────────────────────────────────
+export const fetchRestaurants = () =>
+  req<ApiRestaurant[]>(`${BASE}/restaurants`);
+
+export const updateRestaurant = (id: number, data: Partial<ApiRestaurant>) =>
+  req<ApiRestaurant>(`${BASE}/restaurants/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("Failed to update restaurant");
-  return res.json();
-}
 
 // ── Menu Items ────────────────────────────────────────────────
+export const fetchMenuItems = (restaurantId?: number) =>
+  req<ApiMenuItem[]>(
+    restaurantId ? `${BASE}/menu?restaurantId=${restaurantId}` : `${BASE}/menu`
+  );
 
-export async function fetchMenuItems(restaurantId?: number): Promise<ApiMenuItem[]> {
-  const url = restaurantId
-    ? `${BASE}/admin/menu?restaurantId=${restaurantId}`
-    : `${BASE}/admin/menu`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Failed to fetch menu");
-  return res.json();
-}
-
-export async function createMenuItem(data: Omit<ApiMenuItem, "id">): Promise<ApiMenuItem> {
-  const res = await fetch(`${BASE}/admin/menu`, {
+export const createMenuItem = (data: Omit<ApiMenuItem, "id">) =>
+  req<ApiMenuItem>(`${BASE}/menu`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("Failed to create menu item");
-  return res.json();
-}
 
-export async function updateMenuItem(id: number, data: Partial<ApiMenuItem>): Promise<ApiMenuItem> {
-  const res = await fetch(`${BASE}/admin/menu/${id}`, {
+export const updateMenuItem = (id: number, data: Partial<ApiMenuItem>) =>
+  req<ApiMenuItem>(`${BASE}/menu/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("Failed to update menu item");
-  return res.json();
-}
 
-export async function deleteMenuItem(id: number): Promise<void> {
-  const res = await fetch(`${BASE}/admin/menu/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error("Failed to delete menu item");
-}
+export const deleteMenuItem = (id: number) =>
+  req<void>(`${BASE}/menu/${id}`, { method: "DELETE" });

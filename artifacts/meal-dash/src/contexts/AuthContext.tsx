@@ -1,119 +1,170 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+// artifacts/meal-dash/src/pages/AuthPage.tsx
+import { useState } from "react";
+import { useLocation, useSearch } from "wouter";
+import { UtensilsCrossed, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
-export type User = {
-  id: string;
-  name: string;
-  email: string;
-  address: string;
-  phone: string;
-  isAdmin: boolean;
-};
+export default function AuthPage() {
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [showPass, setShowPass] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const { login, signup } = useAuth();
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
-type AuthContextType = {
-  user: User | null;
-  login: (email: string, password: string) => { ok: boolean; error?: string };
-  signup: (data: { name: string; email: string; password: string; phone: string; address: string }) => { ok: boolean; error?: string };
-  logout: () => void;
-  updateProfile: (data: Partial<User>) => void;
-};
+  // Use wouter's useSearch to correctly read query params in SPA
+  const searchStr = useSearch();
+  const params = new URLSearchParams(searchStr);
+  // Only redirect to safe internal paths — never to /admin unless explicitly intended
+  const rawFrom = params.get("from") || "/";
+  const redirectTo = rawFrom.startsWith("/") && !rawFrom.startsWith("//") ? rawFrom : "/";
 
-const ADMIN_EMAIL = "oluwashijibomiolaseni@gmail.com";
-const ADMIN_PASSWORD = "mealdash2024";
+  const [form, setForm] = useState({
+    name: "", email: "", password: "", phone: "", address: "",
+  });
 
-const AuthContext = createContext<AuthContextType | null>(null);
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((p) => ({ ...p, [k]: e.target.value }));
 
-function getUsers(): Record<string, { password: string; user: User }> {
-  try {
-    return JSON.parse(localStorage.getItem("md_users") || "{}");
-  } catch {
-    return {};
-  }
-}
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
 
-function saveUsers(users: Record<string, { password: string; user: User }>) {
-  localStorage.setItem("md_users", JSON.stringify(users));
-}
-
-function getSavedUser(): User | null {
-  try {
-    const raw = localStorage.getItem("md_current_user");
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(getSavedUser);
-
-  const login = useCallback((email: string, password: string) => {
-    // Admin login
-    if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
-      const adminUser: User = { id: "admin", name: "Admin", email: ADMIN_EMAIL, address: "", phone: "", isAdmin: true };
-      setUser(adminUser);
-      localStorage.setItem("md_current_user", JSON.stringify(adminUser));
-      return { ok: true };
+    if (mode === "login") {
+      const res = login(form.email, form.password);
+      if (!res.ok) {
+        toast({ title: "Login failed", description: res.error, variant: "destructive" });
+      } else {
+        toast({ title: "Welcome back! 👋" });
+        // Admins going to admin, everyone else goes to their intended page (default: home)
+        setLocation(redirectTo === "/admin" && res.isAdmin ? "/admin" : redirectTo === "/admin" ? "/" : redirectTo);
+      }
+    } else {
+      if (!form.name || !form.email || !form.password || !form.phone) {
+        toast({ title: "Missing fields", description: "Please fill in all required fields", variant: "destructive" });
+        setLoading(false);
+        return;
+      }
+      const res = signup(form);
+      if (!res.ok) {
+        toast({ title: "Sign up failed", description: res.error, variant: "destructive" });
+      } else {
+        toast({ title: "Welcome to MealDash! 🎉", description: "Your account has been created" });
+        // New users always go to home or checkout, never admin
+        setLocation(redirectTo === "/admin" ? "/" : redirectTo);
+      }
     }
 
-    const users = getUsers();
-    const record = users[email.toLowerCase()];
-    if (!record) return { ok: false, error: "No account found with this email" };
-    if (record.password !== password) return { ok: false, error: "Incorrect password" };
-
-    setUser(record.user);
-    localStorage.setItem("md_current_user", JSON.stringify(record.user));
-    return { ok: true };
-  }, []);
-
-  const signup = useCallback((data: { name: string; email: string; password: string; phone: string; address: string }) => {
-    const users = getUsers();
-    const key = data.email.toLowerCase();
-    if (users[key]) return { ok: false, error: "An account with this email already exists" };
-
-    const newUser: User = {
-      id: Date.now().toString(),
-      name: data.name,
-      email: data.email,
-      address: data.address,
-      phone: data.phone,
-      isAdmin: false,
-    };
-    users[key] = { password: data.password, user: newUser };
-    saveUsers(users);
-    setUser(newUser);
-    localStorage.setItem("md_current_user", JSON.stringify(newUser));
-    return { ok: true };
-  }, []);
-
-  const logout = useCallback(() => {
-    setUser(null);
-    localStorage.removeItem("md_current_user");
-  }, []);
-
-  const updateProfile = useCallback((data: Partial<User>) => {
-    setUser((prev) => {
-      if (!prev) return prev;
-      const updated = { ...prev, ...data };
-      localStorage.setItem("md_current_user", JSON.stringify(updated));
-      // Also update in users store
-      const users = getUsers();
-      if (users[prev.email.toLowerCase()]) {
-        users[prev.email.toLowerCase()].user = updated;
-        saveUsers(users);
-      }
-      return updated;
-    });
-  }, []);
+    setLoading(false);
+  };
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, updateProfile }}>
-      {children}
-    </AuthContext.Provider>
-  );
-}
+    <div className="min-h-screen bg-background flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg">
+            <UtensilsCrossed className="w-7 h-7 text-primary-foreground" />
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">
+            Meal<span className="text-primary">Dash</span>
+          </h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {mode === "login" ? "Welcome back!" : "Create your account"}
+          </p>
+        </div>
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
+        {/* Tab switcher */}
+        <div className="flex rounded-xl bg-muted p-1 mb-6">
+          {(["login", "signup"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                mode === m
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {m === "login" ? "Log In" : "Sign Up"}
+            </button>
+          ))}
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-4 bg-card border rounded-2xl p-6 shadow-sm">
+          {mode === "signup" && (
+            <div>
+              <Label htmlFor="name">Full Name *</Label>
+              <Input id="name" placeholder="John Doe" value={form.name} onChange={set("name")} required />
+            </div>
+          )}
+
+          <div>
+            <Label htmlFor="email">Email Address *</Label>
+            <Input id="email" type="email" placeholder="you@email.com" value={form.email} onChange={set("email")} required />
+          </div>
+
+          <div>
+            <Label htmlFor="password">Password *</Label>
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPass ? "text" : "password"}
+                placeholder="••••••••"
+                value={form.password}
+                onChange={set("password")}
+                required
+                minLength={6}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass(!showPass)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {mode === "signup" && (
+            <>
+              <div>
+                <Label htmlFor="phone">Phone Number *</Label>
+                <Input id="phone" placeholder="+234 801 234 5678" value={form.phone} onChange={set("phone")} required />
+              </div>
+              <div>
+                <Label htmlFor="address">
+                  Default Delivery Address{" "}
+                  <span className="text-muted-foreground text-xs">(optional)</span>
+                </Label>
+                <Input id="address" placeholder="e.g. 12 Ring Road, Ibadan" value={form.address} onChange={set("address")} />
+              </div>
+            </>
+          )}
+
+          <Button type="submit" className="w-full gap-2 mt-2" size="lg" disabled={loading}>
+            {loading ? "Please wait..." : mode === "login" ? "Log In" : "Create Account"}
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+        </form>
+
+        <p className="text-center text-sm text-muted-foreground mt-4">
+          {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
+          <button
+            type="button"
+            onClick={() => setMode(mode === "login" ? "signup" : "login")}
+            className="text-primary font-medium hover:underline"
+          >
+            {mode === "login" ? "Sign up" : "Log in"}
+          </button>
+        </p>
+      </div>
+    </div>
+  );
 }
