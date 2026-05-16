@@ -277,6 +277,82 @@ function RestaurantModal({ restaurant, onSave, onClose }: {
   );
 }
 
+// ── Admin Login Gate (shown when not authenticated) ──────────
+function AdminLoginGate() {
+  const { login } = useAuth();
+  const { toast } = useToast();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [loading, setLoading] = useState(false);
+  // We don't import Eye/EyeOff here — use text toggle instead
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    const res = login(email, password);
+    if (!res.ok) {
+      toast({ title: "Access denied", description: res.error, variant: "destructive" });
+    } else if (!res.isAdmin) {
+      toast({ title: "Not an admin account", description: "This page is for administrators only", variant: "destructive" });
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-muted/30 flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg">
+            <UtensilsCrossed className="w-7 h-7 text-primary-foreground" />
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">Admin Access</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Sign in with your admin credentials</p>
+        </div>
+        <form onSubmit={handleLogin} className="bg-card border rounded-2xl p-6 shadow-sm space-y-4">
+          <div>
+            <Label htmlFor="admin-email">Email</Label>
+            <Input
+              id="admin-email"
+              type="email"
+              placeholder="admin@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="admin-pass">Password</Label>
+            <div className="relative">
+              <Input
+                id="admin-pass"
+                type={showPass ? "text" : "password"}
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass(!showPass)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+              >
+                {showPass ? "Hide" : "Show"}
+              </button>
+            </div>
+          </div>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "Signing in..." : "Sign In to Admin"}
+          </Button>
+        </form>
+        <p className="text-center mt-4 text-sm">
+          <a href="/" className="text-primary hover:underline">← Back to MealDash</a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Admin Page ───────────────────────────────────────────
 export default function Admin() {
   const { user, logout } = useAuth();
@@ -365,7 +441,10 @@ export default function Admin() {
     }
   };
 
-  if (!user?.isAdmin) return null;
+  // Show inline login gate instead of blank page or redirect
+  if (!user || !user.isAdmin) {
+    return <AdminLoginGate />;
+  }
 
   const counts = STATUS_FLOW.reduce(
     (acc, s) => ({ ...acc, [s]: orders.filter((o) => o.status === s).length }),
