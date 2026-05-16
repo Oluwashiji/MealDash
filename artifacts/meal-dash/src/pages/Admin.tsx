@@ -300,10 +300,10 @@ export default function Admin() {
 
   // Guard: redirect non-admins immediately
   useEffect(() => {
-    if (!user) { setLocation("/auth?from=/admin"); return; }
-    if (!user.isAdmin) { setLocation("/"); return; }
-    setOrders(loadOrders());
-  }, [user, setLocation]);
+    if (user?.isAdmin) {
+      setOrders(loadOrders());
+    }
+  }, [user]);
 
   const advanceStatus = (orderId: number) => {
     const updated = orders.map((o) => {

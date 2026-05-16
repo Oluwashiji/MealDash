@@ -1,5 +1,6 @@
+// artifacts/meal-dash/src/pages/AuthPage.tsx
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { UtensilsCrossed, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,13 @@ export default function AuthPage() {
   const { login, signup } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const searchStr = useSearch();
+
+  // Where to go after login — defaults to home, never auto-admin
+  const params = new URLSearchParams(searchStr);
+  const rawFrom = params.get("from") || "/";
+  // Strip /admin from redirect — admin must navigate there manually
+  const redirectTo = rawFrom === "/admin" ? "/" : (rawFrom.startsWith("/") ? rawFrom : "/");
 
   const [form, setForm] = useState({
     name: "", email: "", password: "", phone: "", address: "",
@@ -31,12 +39,17 @@ export default function AuthPage() {
       if (!res.ok) {
         toast({ title: "Login failed", description: res.error, variant: "destructive" });
       } else {
-        const redirect = new URLSearchParams(window.location.search).get("from") || "/";
-        setLocation(redirect);
+        toast({ title: "Welcome back! 👋" });
+        // Always go to home after login — admin navigates to /admin from navbar
+        setLocation(redirectTo);
       }
     } else {
       if (!form.name || !form.email || !form.password || !form.phone) {
-        toast({ title: "Missing fields", description: "Please fill in all required fields", variant: "destructive" });
+        toast({
+          title: "Missing fields",
+          description: "Please fill in all required fields",
+          variant: "destructive",
+        });
         setLoading(false);
         return;
       }
@@ -45,8 +58,7 @@ export default function AuthPage() {
         toast({ title: "Sign up failed", description: res.error, variant: "destructive" });
       } else {
         toast({ title: "Welcome to MealDash! 🎉", description: "Your account has been created" });
-        const redirect = new URLSearchParams(window.location.search).get("from") || "/";
-        setLocation(redirect);
+        setLocation(redirectTo);
       }
     }
 
@@ -77,7 +89,9 @@ export default function AuthPage() {
               type="button"
               onClick={() => setMode(m)}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                mode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                mode === m
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {m === "login" ? "Log In" : "Sign Up"}
@@ -90,13 +104,26 @@ export default function AuthPage() {
           {mode === "signup" && (
             <div>
               <Label htmlFor="name">Full Name *</Label>
-              <Input id="name" placeholder="John Doe" value={form.name} onChange={set("name")} required />
+              <Input
+                id="name"
+                placeholder="John Doe"
+                value={form.name}
+                onChange={set("name")}
+                required
+              />
             </div>
           )}
 
           <div>
             <Label htmlFor="email">Email Address *</Label>
-            <Input id="email" type="email" placeholder="you@email.com" value={form.email} onChange={set("email")} required />
+            <Input
+              id="email"
+              type="email"
+              placeholder="you@email.com"
+              value={form.email}
+              onChange={set("email")}
+              required
+            />
           </div>
 
           <div>
@@ -125,11 +152,25 @@ export default function AuthPage() {
             <>
               <div>
                 <Label htmlFor="phone">Phone Number *</Label>
-                <Input id="phone" placeholder="+234 801 234 5678" value={form.phone} onChange={set("phone")} required />
+                <Input
+                  id="phone"
+                  placeholder="+234 801 234 5678"
+                  value={form.phone}
+                  onChange={set("phone")}
+                  required
+                />
               </div>
               <div>
-                <Label htmlFor="address">Default Delivery Address <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                <Input id="address" placeholder="e.g. 12 Ring Road, Ibadan" value={form.address} onChange={set("address")} />
+                <Label htmlFor="address">
+                  Default Delivery Address{" "}
+                  <span className="text-muted-foreground text-xs">(optional)</span>
+                </Label>
+                <Input
+                  id="address"
+                  placeholder="e.g. 12 Ring Road, Ibadan"
+                  value={form.address}
+                  onChange={set("address")}
+                />
               </div>
             </>
           )}
